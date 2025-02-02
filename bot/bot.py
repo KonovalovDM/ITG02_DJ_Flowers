@@ -1,27 +1,30 @@
 """
 bot.py – запуск Telegram-бота
 """
-
+import sys
+import os
+import django
 import asyncio
 import requests
 from aiogram import Bot, Dispatcher, types, Router
 from aiogram.filters import Command
-from django.conf import settings
-# from flowers.settings import TOKEN
-import sys
-# print(sys.path)
-import os
-sys.path.append(os.path.dirname(os.path.abspath(__file__)))
-sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+
+# Устанавливаем переменную окружения для Django
+# sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("DJANGO_SETTINGS_MODULE", "flowers.settings")
-import django
 django.setup()
 
+from django.conf import settings  # Импортируем настройки Django
 
 TOKEN = settings.TELEGRAM_BOT_TOKEN
-
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
+
+# ID администратора (кому отправлять уведомления)
+ADMIN_ID = settings.TELEGRAM_ADMIN_ID
+
+# URL API Django-сервера
+API_URL = settings.API_URL
 
 # Создаем Router для команд
 router = Router()

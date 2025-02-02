@@ -5,8 +5,8 @@ handlers.py – обработчики сообщений и команд бот
 import requests
 from aiogram import types, Router
 from aiogram.filters import Command
-from flowers.settings import API_URL
-from bot.keyboards import orders_keyboard
+from .bot import API_URL
+from bot.keyboards import orders_keyboard, admin_keyboard
 
 router = Router()
 
