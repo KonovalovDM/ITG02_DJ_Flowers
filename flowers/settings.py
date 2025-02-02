@@ -11,6 +11,7 @@ https://docs.djangoproject.com/en/5.1/ref/settings/
 """
 
 from pathlib import Path
+import os
 
 # Build paths inside the project like this: BASE_DIR / 'subdir'.
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -39,6 +40,7 @@ INSTALLED_APPS = [
     'django.contrib.staticfiles',
     'core',
     'rest_framework',
+    'flowers',
 ]
 
 MIDDLEWARE = [
@@ -130,3 +132,12 @@ STATICFILES_DIRS = [BASE_DIR / 'static']
 # https://docs.djangoproject.com/en/5.1/ref/settings/#default-auto-field
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+# Токен Telegram-бота
+TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7638821933:AAEpS3aWrBoDmgH_lk9GIfCdhuFCaPNcCPw")
+
+# ID администратора (чтобы бот знал, куда отправлять уведомления)
+TELEGRAM_ADMIN_ID = 415285890  # <-- Замени на свой Telegram ID
+
+# API URL для взаимодействия с ботом
+API_URL = "http://127.0.0.1:8000/api"

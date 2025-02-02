@@ -2,8 +2,20 @@ import asyncio
 import requests
 from aiogram import Bot, Dispatcher, types, Router
 from aiogram.filters import Command
+from django.conf import settings
+# from flowers.settings import TOKEN
+import sys
+# print(sys.path)
+import os
+sys.path.append(os.path.dirname(os.path.abspath(__file__)))
+sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "flowers.settings")
+import django
+django.setup()
 
-TOKEN = "7638821933:AAEpS3aWrBoDmgH_lk9GIfCdhuFCaPNcCPw"
+
+TOKEN = settings.TELEGRAM_BOT_TOKEN
+
 bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
