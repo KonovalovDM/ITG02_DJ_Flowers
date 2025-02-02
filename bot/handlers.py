@@ -1,14 +1,22 @@
 """
 handlers.py – обработчики сообщений и команд бота
 """
+import os
+import django
+
+# Указываем Django, где искать настройки
+os.environ.setdefault("DJANGO_SETTINGS_MODULE", "flowers.settings")
+django.setup()  # Загружаем Django
 
 import requests
 from aiogram import types, Router
 from aiogram.filters import Command
-from .bot import API_URL
+from django.conf import settings  # Импортируем настройки Django
 from bot.keyboards import orders_keyboard, admin_keyboard
 
 router = Router()
+
+API_URL = getattr(settings, "API_URL", "http://127.0.0.1:8000/api")  # Защита от ошибки
 
 @router.message(Command("start"))
 async def start(message: types.Message):

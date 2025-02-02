@@ -1,9 +1,9 @@
 """
-__init__.py – инициализация Telegram-бота
+__init__.py – делает папку bot модулем, инициализация Telegram-бота
 """
-import asyncio
-from bot.bot import bot, dp
-from bot.handlers import router
+
+from .bot import bot, dp    # Подключаем бота и диспетчер
+# from bot.handlers import router
 
 # Подключаем обработчики команд
-dp.include_router(router)
+# dp.include_router(router)
