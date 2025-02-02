@@ -1,0 +1,10 @@
+{% extends 'base.html' %}
+{% block title %}Отчет о продажах{% endblock %}
+
+{% block content %}
+<h2>Отчет о продажах за {{ report.date }}</h2>
+<p>Всего заказов: <strong>{{ report.total_orders }}</strong></p>
+<p>Общая выручка: <strong>{{ report.total_revenue }} руб.</strong></p>
+
+<a href="{% url 'download_sales_report' %}" class="btn btn-primary">Скачать отчет в CSV</a>
+{% endblock %}

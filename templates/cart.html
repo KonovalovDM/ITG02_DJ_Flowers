@@ -1,0 +1,8 @@
+{% extends 'base.html' %}
+{% block title %}Корзина{% endblock %}
+
+{% block content %}
+<h2>Ваша корзина</h2>
+<p>Здесь будут товары, которые вы добавили.</p>
+<a href="{% url 'place_order' %}" class="btn btn-primary">Оформить заказ</a>
+{% endblock %}

@@ -1,3 +1,7 @@
+"""
+bot.py – запуск Telegram-бота
+"""
+
 import asyncio
 import requests
 from aiogram import Bot, Dispatcher, types, Router

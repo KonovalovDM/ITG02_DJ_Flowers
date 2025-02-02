@@ -1,0 +1,48 @@
+/* Общие стили */
+body {
+    font-family: Arial, sans-serif;
+    background-color: #f8f9fa;
+    padding-top: 70px;
+}
+
+/* Навигация */
+.navbar {
+    background-color: #28a745;
+}
+
+.navbar-brand {
+    font-weight: bold;
+    color: white !important;
+}
+
+/* Карточки товаров */
+.card {
+    border: none;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+}
+
+.card img {
+    height: 200px;
+    object-fit: cover;
+}
+
+/* Кнопки */
+.btn-primary {
+    background-color: #28a745;
+    border: none;
+}
+
+.btn-primary:hover {
+    background-color: #218838;
+}
+
+/* Футер */
+.footer {
+    text-align: center;
+    padding: 10px;
+    background: #28a745;
+    color: white;
+    position: fixed;
+    width: 100%;
+    bottom: 0;
+}
