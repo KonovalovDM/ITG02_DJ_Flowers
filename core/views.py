@@ -5,6 +5,10 @@ from .models import Product, Order
 from .forms import OrderForm
 from core.telegram_bot import notify_admin
 
+def index(request):
+    """Главная страница"""
+    return render(request, "index.html")
+
 def catalog(request):
     """Отображение каталога цветов"""
     products = Product.objects.all()

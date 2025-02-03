@@ -16,9 +16,16 @@ Including another URLconf
 """
 from django.contrib import admin
 from django.urls import path, include
+from core import views  # Импортируем views из приложения core
+# from django.views.generic import TemplateView
 
 urlpatterns = [
-    path('admin/', admin.site.urls),
-    path('', include('core.urls')),
-    path('api/', include('core.api_urls')),
+    path("admin/", admin.site.urls),
+    path("", views.index, name="index"),  # Главная страница
+    path('accounts/', include('django.contrib.auth.urls')),  # подключение стандартных маршрутов аутентификации
+    path("catalog/", views.catalog, name="catalog"),
+    path("cart/", views.cart, name="cart"),
+    path("order/", views.place_order, name="place_order"),
+    path("history/", views.order_history, name="order_history"),
+    path("api/", include("core.api_urls")),  # Подключение API
 ]

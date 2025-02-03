@@ -59,7 +59,7 @@ ROOT_URLCONF = 'flowers.urls'
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],  # Указан путь для Django шаблонов
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
@@ -72,7 +72,7 @@ TEMPLATES = [
     },
     {
         'BACKEND': 'django.template.backends.jinja2.Jinja2',
-        'DIRS': [BASE_DIR / 'templates'],
+        'DIRS': [BASE_DIR / 'templates'],   # Указан путь для Jinja2 шаблонов
         'APP_DIRS': True,
         'OPTIONS': {'environment': 'jinja2.Environment'},
     },
