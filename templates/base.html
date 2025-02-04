@@ -16,8 +16,13 @@
             <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbarNav">
                 <span class="navbar-toggler-icon"></span>
             </button>
+                    <!-- Логотип с лева -->
+        <div class="d-flex justify-content-start p-2">
+          <img src="{% static 'images/flowers/logo.png' %}" alt="Логотип" class="logo">
+        </div>
             <div class="collapse navbar-collapse" id="navbarNav">
                 <ul class="navbar-nav ms-auto">
+                    <li class="nav-item"><a class="nav-link" href="{% url 'index' %}">Главная</a></li>
                     <li class="nav-item"><a class="nav-link" href="{% url 'catalog' %}">Каталог</a></li>
                     {% if user.is_authenticated %}
                         <li class="nav-item"><a class="nav-link" href="{% url 'order_history' %}">Мои заказы</a></li>

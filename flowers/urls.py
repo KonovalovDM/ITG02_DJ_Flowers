@@ -17,7 +17,9 @@ Including another URLconf
 from django.contrib import admin
 from django.urls import path, include
 from core import views  # Импортируем views из приложения core
-# from django.views.generic import TemplateView
+from django.conf import settings
+from django.conf.urls.static import static
+
 
 urlpatterns = [
     path("admin/", admin.site.urls),
@@ -28,4 +30,4 @@ urlpatterns = [
     path("order/", views.place_order, name="place_order"),
     path("history/", views.order_history, name="order_history"),
     path("api/", include("core.api_urls")),  # Подключение API
-]
+] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)

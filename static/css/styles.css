@@ -1,7 +1,7 @@
 /* Общие стили */
 body {
     font-family: Arial, sans-serif;
-    background-color: #f8f9fa;
+    background-color: cornsilk;
     padding-top: 70px;
 }
 
@@ -13,6 +13,13 @@ body {
 .navbar-brand {
     font-weight: bold;
     color: white !important;
+}
+
+/* Логотип */
+.logo {
+    width: 100px; /* Ограничение ширины логотипа */
+    height: auto;
+    margin: 0; /* Убираем центровку */
 }
 
 /* Карточки товаров */
