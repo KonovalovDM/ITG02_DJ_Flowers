@@ -4,6 +4,9 @@ from django.contrib import messages
 from .models import Product, Order
 from .forms import OrderForm
 from core.telegram_bot import notify_admin
+from asgiref.sync import sync_to_async
+import asyncio
+import threading
 
 def index(request):
     """Главная страница"""
@@ -19,9 +22,27 @@ def cart(request):
     """Отображение корзины"""
     return render(request, 'cart.html')
 
+# @login_required
+# async def place_order(request):
+#     """Оформление заказа"""
+#     if request.method == 'POST':
+#         form = OrderForm(request.POST)
+#         if form.is_valid():
+#             order = form.save(commit=False)
+#             order.user = request.user
+#             order.save()
+#             form.save_m2m()
+#             # Используем sync_to_async для вызова синхронной функции notify_admin
+#             await sync_to_async(notify_admin)(order.id)  # Уведомление в Telegram
+#             messages.success(request, '✅ Заказ успешно создан!')
+#             return redirect('order_history')
+#     else:
+#         form = OrderForm()
+#     return render(request, 'order.html', {'form': form})
+
 @login_required
-async def place_order(request):
-    """Оформление заказа"""
+def place_order(request):
+    """Оформление заказа (синхронная версия)"""
     if request.method == 'POST':
         form = OrderForm(request.POST)
         if form.is_valid():
@@ -29,12 +50,16 @@ async def place_order(request):
             order.user = request.user
             order.save()
             form.save_m2m()
-            await notify_admin(order.id)  # Уведомление в Telegram
+
+            # Асинхронный вызов из синхронного кода
+            threading.Thread(target=lambda: asyncio.run(notify_admin(order.id))).start()
+
             messages.success(request, '✅ Заказ успешно создан!')
             return redirect('order_history')
     else:
         form = OrderForm()
     return render(request, 'order.html', {'form': form})
+
 
 @login_required
 def order_history(request):

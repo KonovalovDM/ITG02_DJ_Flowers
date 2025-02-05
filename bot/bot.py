@@ -5,6 +5,7 @@ bot.py – запуск Telegram-бота с обработчиками
 import os
 import sys
 import asyncio
+import aiohttp
 import requests
 import django
 from aiogram import Bot, Dispatcher, types
@@ -67,15 +68,18 @@ async def start(message: types.Message):
 @dp.message(Command("orders"))
 async def get_orders(message: types.Message):
     """Получить список заказов"""
-    response = requests.get(f"{API_URL}/orders/")
-    if response.status_code == 200:
-        orders = response.json()
-        text = "📋 **Список заказов:**\n\n"
-        for order in orders:
-            text += f"🆔 {order['id']} | {order['status']}\n"
-        await message.answer(text, parse_mode="Markdown")
-    else:
-        await message.answer("❌ Ошибка получения заказов.")
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_URL}/orders/") as response:
+            if response.status == 200:
+                orders = await response.json()
+                text = "📋 **Список заказов:**\n\n"
+                for order in orders:
+                    text += f"🆔 {order['id']} | {order['status']}\n"
+                reply_markup = admin_keyboard if message.from_user.id == ADMIN_ID else None
+                await message.answer(text, parse_mode="Markdown", reply_markup=reply_markup)
+            else:
+                await message.answer("❌ Ошибка получения заказов.")
+
 
 # 🔹 Обработчик команды /order <id>
 @dp.message(Command("order"))
@@ -83,36 +87,48 @@ async def get_order_detail(message: types.Message):
     """Получить детали конкретного заказа"""
     try:
         order_id = int(message.text.split()[1])
-        response = requests.get(f"{API_URL}/orders/{order_id}/")
-        if response.status_code == 200:
-            order = response.json()
-            text = (
-                f"🛒 **Заказ {order['id']}**\n"
-                f"📦 Товары: {order['items']}\n"
-                f"📍 Доставка: {order['delivery_address']}\n"
-                f"📅 Дата: {order['created_at']}\n"
-                f"📌 Статус: {order['status']}"
-            )
-            await message.answer(text, parse_mode="Markdown")
-        else:
-            await message.answer("❌ Заказ не найден.")
+        async with aiohttp.ClientSession() as session:
+            async with session.get(f"{API_URL}/orders/{order_id}/") as response:
+                if response.status == 200:
+                    order = await response.json()
+                    text = (
+                        f"🛒 **Заказ {order['id']}**\n"
+                        f"📦 Товары: {order['items']}\n"
+                        f"📍 Доставка: {order['delivery_address']}\n"
+                        f"📅 Дата: {order['created_at']}\n"
+                        f"📌 Статус: {order['status']}"
+                    )
+                    await message.answer(text, parse_mode="Markdown")
+                else:
+                    await message.answer("❌ Заказ не найден.")
     except (IndexError, ValueError):
-        await message.answer("⚠ Введите корректный ID заказа. Пример: `/order 123`")
+        await message.answer("⚠️ Введите корректный ID заказа. Пример: `/order 123`")
 
 # 🔹 Обработчик inline-кнопок (админка)
 @dp.callback_query()
 async def handle_callback(call: types.CallbackQuery):
     """Обработчик нажатий на кнопки"""
+    if call.from_user.id != ADMIN_ID:
+        await call.answer("У вас нет прав для выполнения этого действия.", show_alert=True)
+        return
+
     if call.data == "refresh":
         await get_orders(call.message)
     elif call.data in ["confirm", "in_delivery", "cancel"]:
         order_id = call.message.text.split()[1]  # ID заказа
-        new_status = {"confirm": "Подтвержден", "in_delivery": "В доставке", "cancel": "Отменен"}[call.data]
-        response = requests.post(f"{API_URL}/orders/{order_id}/", json={"status": new_status})
-        if response.status_code == 200:
-            await call.message.answer(f"✅ Заказ {order_id} теперь {new_status}", reply_markup=admin_keyboard)
-        else:
-            await call.message.answer("❌ Ошибка обновления заказа.")
+        async with aiohttp.ClientSession() as session:
+            async with session.post(f"{API_URL}/orders/{order_id}/", json={"status": call.data}) as response:
+                if response.status == 200:
+                    await call.message.answer(f"✅ Заказ {order_id} теперь {call.data}", reply_markup=admin_keyboard)
+                else:
+                    await call.message.answer("❌ Ошибка обновления заказа.")
+
+        # new_status = {"confirm": "Подтвержден", "in_delivery": "В доставке", "cancel": "Отменен"}[call.data]
+        # response = requests.post(f"{API_URL}/orders/{order_id}/", json={"status": new_status})
+        # if response.status_code == 200:
+        #     await call.message.answer(f"✅ Заказ {order_id} теперь {new_status}", reply_markup=admin_keyboard)
+        # else:
+        #     await call.message.answer("❌ Ошибка обновления заказа.")
 
 # 🔹 Запуск бота
 async def main():

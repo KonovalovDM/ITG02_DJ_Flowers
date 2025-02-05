@@ -1,6 +1,6 @@
 /* Общие стили */
 body {
-    font-family: Arial, sans-serif;
+    font-family: Verdana, Arial, sans-serif;
     background-color: cornsilk;
     padding-top: 70px;
 }
@@ -12,20 +12,20 @@ body {
 
 .navbar-brand {
     font-weight: bold;
-    color: white !important;
+    color: #a27d7a !important;
 }
 
 /* Логотип */
 .logo {
-    width: 100px; /* Ограничение ширины логотипа */
-    height: auto;
+    width: 50px !important; /* Ограничение ширины логотипа */
+    height: auto !important;
     margin: 0; /* Убираем центровку */
 }
 
 /* Карточки товаров */
 .card {
     border: none;
-    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    box-shadow: 0 3px 5px rgba(0, 0, 0, 0.1);
 }
 
 .card img {
@@ -47,8 +47,8 @@ body {
 .footer {
     text-align: center;
     padding: 10px;
-    background: #28a745;
-    color: white;
+    background: #ffe7dc !important;
+    color: #f8dcff !important;
     position: fixed;
     width: 100%;
     bottom: 0;
