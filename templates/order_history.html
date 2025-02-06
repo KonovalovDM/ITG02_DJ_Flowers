@@ -9,6 +9,8 @@
             <th>ID</th>
             <th>Дата</th>
             <th>Статус</th>
+            <th>Товары</th>
+            <th>Цена</th>
         </tr>
     </thead>
     <tbody>
@@ -17,6 +19,16 @@
             <td>{{ order.id }}</td>
             <td>{{ order.order_date }}</td>
             <td>{{ order.get_status_display }}</td>
+            <td>
+                {% for product in order.products.all %}
+                    <p>{{ product.name }}</p>
+                {% endfor %}
+            </td>
+            <td>
+                {% for product in order.products.all %}
+                    <p>{{ product.price }}</p>
+                {% endfor %}
+            </td>
         </tr>
         {% endfor %}
     </tbody>

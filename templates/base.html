@@ -26,7 +26,18 @@
                     <li class="nav-item"><a class="nav-link" href="{% url 'catalog' %}">Каталог</a></li>
                     {% if user.is_authenticated %}
                         <li class="nav-item"><a class="nav-link" href="{% url 'order_history' %}">Мои заказы</a></li>
-                        <li class="nav-item"><a class="nav-link" href="{% url 'logout' %}">Выход</a></li>
+
+                        <li class="nav-item">
+                            <span class="nav-link">Привет, {{ user.username }}!</span>
+                        </li>
+                        <li class="nav-item">
+
+                        <form action="{% url 'logout' %}" method="post" style="display:inline;">
+                            {% csrf_token %}
+                            <button type="submit" class="nav-link btn btn-link" style="border:none; background:none; cursor:pointer;">
+                                Выход
+                            </button>
+                        </form>
                     {% else %}
                         <li class="nav-item"><a class="nav-link" href="{% url 'login' %}">Войти</a></li>
                         <li class="nav-item"><a class="nav-link" href="{% url 'register' %}">Регистрация</a></li>

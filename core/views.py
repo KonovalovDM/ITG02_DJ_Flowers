@@ -5,8 +5,30 @@ from .models import Product, Order
 from .forms import OrderForm
 from core.telegram_bot import notify_admin
 from asgiref.sync import sync_to_async
+from django.contrib.auth.forms import UserCreationForm
+from django.contrib.auth import login
+
 import asyncio
 import threading
+
+def register(request):
+    """Регистрация нового пользователя"""
+    if request.method == "POST":
+        form = UserCreationForm(request.POST)
+        if form.is_valid():
+            user = form.save()
+            login(request, user)
+            return redirect("index")  # Перенаправляем на главную страницу
+    else:
+        form = UserCreationForm()
+    return render(request, "registration/register.html", {"form": form})
+
+@login_required
+def some_view(request):
+    context = {
+        'username': request.user.username,  # Добавляем имя пользователя
+    }
+    return render(request, 'your_template.html', context)
 
 def index(request):
     """Главная страница"""
