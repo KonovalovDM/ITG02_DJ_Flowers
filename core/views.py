@@ -44,24 +44,6 @@ def cart(request):
     """Отображение корзины"""
     return render(request, 'cart.html')
 
-# @login_required
-# async def place_order(request):
-#     """Оформление заказа"""
-#     if request.method == 'POST':
-#         form = OrderForm(request.POST)
-#         if form.is_valid():
-#             order = form.save(commit=False)
-#             order.user = request.user
-#             order.save()
-#             form.save_m2m()
-#             # Используем sync_to_async для вызова синхронной функции notify_admin
-#             await sync_to_async(notify_admin)(order.id)  # Уведомление в Telegram
-#             messages.success(request, '✅ Заказ успешно создан!')
-#             return redirect('order_history')
-#     else:
-#         form = OrderForm()
-#     return render(request, 'order.html', {'form': form})
-
 @login_required
 def place_order(request):
     """Оформление заказа (синхронная версия)"""

@@ -20,8 +20,11 @@ from core import views  # Импортируем views из приложения
 from django.conf import settings
 from django.conf.urls.static import static
 from django.shortcuts import redirect
+from django.views.generic import RedirectView
+
 
 urlpatterns = [
+    path("favicon.ico", RedirectView.as_view(url="/static/favicon.ico", permanent=True)),
     path("admin/", admin.site.urls),
     path("", views.index, name="index"),  # Главная страница
     path("accounts/", include("django.contrib.auth.urls")),  # Аутентификация Django

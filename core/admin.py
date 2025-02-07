@@ -4,8 +4,6 @@ from django.shortcuts import redirect
 from .models import Report, Product, Order
 
 admin.site.register(Product)
-admin.site.register(Order)
-
 
 class ReportAdmin(admin.ModelAdmin):
     change_list_template = "admin/reports.html"
@@ -21,3 +19,15 @@ class ReportAdmin(admin.ModelAdmin):
         return redirect("/reports/sales/")
 
 admin.site.register(Report, ReportAdmin)
+
+class OrderAdmin(admin.ModelAdmin):
+    list_display = ('id', 'user', 'status', 'order_date', 'total_price')  # Добавляем статус и цену
+    list_filter = ('status',)
+    search_fields = ('user__username', 'id')
+
+    def total_price(self, obj):
+        return sum(product.price for product in obj.products.all())  # Подсчет суммы заказа
+
+    total_price.short_description = "Общая стоимость"  # Название в админке
+
+admin.site.register(Order, OrderAdmin)  # Оставляем только одну регистрацию с кастомной админкой
