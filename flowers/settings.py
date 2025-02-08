@@ -29,6 +29,7 @@ DEBUG = True
 
 ALLOWED_HOSTS = []
 
+AUTH_USER_MODEL = 'core.User'
 
 # Application definition
 
@@ -146,6 +147,7 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Токен Telegram-бота
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7638821933:AAEpS3aWrBoDmgH_lk9GIfCdhuFCaPNcCPw")
+TELEGRAM_BOT_URL = "https://t.me/@AioFlowerDeliveryBot"  # Ссылка на бота
 
 # ID администратора (чтобы бот знал, куда отправлять уведомления)
 TELEGRAM_ADMIN_ID = 415285890  # <-- Замени на свой Telegram ID

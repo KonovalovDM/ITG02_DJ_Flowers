@@ -1,3 +1,6 @@
+
+from .forms import UserRegisterForm
+from django.conf import settings
 from django.shortcuts import render, redirect
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
@@ -13,15 +16,17 @@ import threading
 
 def register(request):
     """Регистрация нового пользователя"""
-    if request.method == "POST":
-        form = UserCreationForm(request.POST)
+    if request.method == 'POST':
+        form = UserRegisterForm(request.POST)
         if form.is_valid():
             user = form.save()
             login(request, user)
-            return redirect("index")  # Перенаправляем на главную страницу
+            messages.success(request, f"✅ Регистрация успешна! Теперь привяжите Telegram: {settings.TELEGRAM_BOT_URL}")
+            return redirect("catalog")
     else:
-        form = UserCreationForm()
+        form = UserRegisterForm()
     return render(request, "registration/register.html", {"form": form})
+
 
 @login_required
 def some_view(request):

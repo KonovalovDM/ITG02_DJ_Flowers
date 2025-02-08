@@ -1,7 +1,15 @@
 # Модели базы данных
-
+from django.contrib.auth.models import AbstractUser
 from django.db import models
-from django.contrib.auth.models import User
+
+class User(AbstractUser):
+    """Расширенная модель пользователя"""
+    telegram_id = models.BigIntegerField(null=True, blank=True, unique=True, verbose_name="Telegram ID")
+    is_staff = models.BooleanField(default=False, verbose_name="Сотрудник")
+    is_admin = models.BooleanField(default=False, verbose_name="Администратор")
+
+    def __str__(self):
+        return self.username
 
 
 class Product(models.Model):
