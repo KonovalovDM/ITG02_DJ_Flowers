@@ -1,8 +1,23 @@
+<!-- cart.html -->
 {% extends 'base.html' %}
 {% block title %}Корзина{% endblock %}
 
 {% block content %}
 <h2>Ваша корзина</h2>
-<p>Здесь будут товары, которые вы добавили.</p>
-<a href="{% url 'place_order' %}" class="btn btn-primary">Оформить заказ</a>
+
+{% if cart %}
+    <ul>
+        {% for product_id, item in cart.items %}
+            <li>
+                <img src="{{ item.image }}" alt="{{ item.name }}" style="width: 100px;">
+                <strong>{{ item.name }}</strong> - {{ item.price }} руб.
+                ({{ item.quantity }} шт.)
+            </li>
+        {% endfor %}
+    </ul>
+    <a href="{% url 'place_order' %}" class="btn btn-primary">Оформить заказ</a>
+{% else %}
+    <p>Ваша корзина пуста.</p>
+{% endif %}
+
 {% endblock %}

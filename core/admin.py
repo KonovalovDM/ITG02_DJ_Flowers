@@ -1,9 +1,11 @@
 from django.contrib import admin
+from django.contrib.auth.admin import UserAdmin
 from django.urls import path
 from django.shortcuts import redirect
-from .models import Report, Product, Order
+from .models import Report, Product, Order, User
 
 admin.site.register(Product)
+admin.site.register(User, UserAdmin)
 
 class ReportAdmin(admin.ModelAdmin):
     change_list_template = "admin/reports.html"

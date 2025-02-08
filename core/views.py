@@ -1,11 +1,10 @@
-
-from .forms import UserRegisterForm
+from django.core.mail import send_mail
 from django.conf import settings
-from django.shortcuts import render, redirect
+from django.shortcuts import render, redirect, get_object_or_404
 from django.contrib.auth.decorators import login_required
 from django.contrib import messages
-from .models import Product, Order
-from .forms import OrderForm
+from .models import Product, Order, User
+from .forms import OrderForm, UserRegisterForm
 from core.telegram_bot import notify_admin
 from asgiref.sync import sync_to_async
 from django.contrib.auth.forms import UserCreationForm
@@ -15,18 +14,23 @@ import asyncio
 import threading
 
 def register(request):
-    """Регистрация нового пользователя"""
-    if request.method == 'POST':
+    """Регистрация пользователя с отправкой ссылки в Telegram"""
+    if request.method == "POST":
         form = UserRegisterForm(request.POST)
         if form.is_valid():
             user = form.save()
-            login(request, user)
-            messages.success(request, f"✅ Регистрация успешна! Теперь привяжите Telegram: {settings.TELEGRAM_BOT_URL}")
-            return redirect("catalog")
+            telegram_message = f"Привет, {user.username}! Привяжите ваш Telegram, отправив команду /link {user.id} в нашем боте."
+            send_mail(
+                "Привяжите ваш Telegram",
+                telegram_message,
+                settings.DEFAULT_FROM_EMAIL,
+                [user.email],
+                fail_silently=True,
+            )
+            return redirect("login")  # Перенаправляем на страницу входа
     else:
         form = UserRegisterForm()
     return render(request, "registration/register.html", {"form": form})
-
 
 @login_required
 def some_view(request):
@@ -75,3 +79,35 @@ def order_history(request):
     """История заказов"""
     orders = Order.objects.filter(user=request.user)
     return render(request, 'order_history.html', {'orders': orders})
+
+
+def catalog_view(request):
+    products = Product.objects.all()
+    return render(request, 'catalog.html', {'products': products})
+
+
+def add_to_cart(request, product_id):
+    product = get_object_or_404(Product, id=product_id)
+
+    cart = request.session.get("cart", {})  # Получаем корзину из сессии
+    if str(product_id) in cart:
+        cart[str(product_id)]["quantity"] += 1
+    else:
+        cart[str(product_id)] = {
+            "name": product.name,
+            "price": float(product.price),
+            "image": product.image.url,
+            "quantity": 1,
+        }
+
+    request.session["cart"] = cart  # Сохраняем корзину
+    request.session.modified = True  # Обновляем сессию
+
+    return redirect("cart")  # Перенаправляем в корзину
+
+
+def cart_view(request):
+    cart = request.session.get("cart", {})  # Загружаем корзину
+    return render(request, "cart.html", {"cart": cart})
+
+
