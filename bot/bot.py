@@ -55,7 +55,6 @@ ADMIN_ID = settings.TELEGRAM_ADMIN_ID
 # URL API Django-сервера
 API_URL = settings.API_URL
 
-
 # 🔹 Клавиатуры
 customer_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="📦 Мои заказы", callback_data="orders")],
@@ -74,7 +73,6 @@ admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel")],
     [InlineKeyboardButton(text="📊 Аналитика", callback_data="analytics")]
 ])
-
 
 def create_admin_keyboard(order_id):
     return InlineKeyboardMarkup(inline_keyboard=[
@@ -114,7 +112,15 @@ async def start(message: types.Message):
     user = await sync_to_async(User.objects.filter(telegram_id=telegram_id).first, thread_sensitive=True)()
 
     if user:
-        keyboard = get_keyboard_for_user(user)  # Выбираем правильную клавиатуру
+        # В зависимости от роли пользователя выбираем клавиатуру
+        if user.is_admin:
+            keyboard = admin_keyboard  # Клавиатура для администратора
+        elif user.is_staff:
+            keyboard = staff_keyboard  # Клавиатура для сотрудника
+        else:
+            keyboard = customer_keyboard  # Клавиатура для клиента
+
+#        keyboard = get_keyboard_for_user(user)  # Выбираем правильную клавиатуру
         await message.answer("🌸 Добро пожаловать! Вы авторизованы.", reply_markup=keyboard)
 
     else:
@@ -122,6 +128,27 @@ async def start(message: types.Message):
         await message.answer("🔹 Добро пожаловать! Введите ваше имя для регистрации.")
         dp.message.register(get_user_name, F.text)
 
+# Блок для отладки - начало
+
+@dp.callback_query(lambda c: c.data == 'orders')
+async def process_orders(callback_query: types.CallbackQuery):
+    await callback_query.answer("📦 Тут будет список ваших заказов.")
+
+@dp.callback_query(lambda c: c.data == 'confirm')
+async def process_confirm(callback_query: types.CallbackQuery):
+    await callback_query.answer("✅ Заказ подтвержден.")
+
+@dp.callback_query(lambda c: c.data == 'in_delivery')
+async def process_delivery(callback_query: types.CallbackQuery):
+    await callback_query.answer("🚚 Заказ в доставке.")
+
+@dp.callback_query(lambda c: c.data.startswith("orders_"))
+async def process_order(callback_query: types.CallbackQuery):
+    order_id = callback_query.data.split("_")[1]
+    keyboard = create_admin_keyboard(order_id)  # создаем клавиатуру для этого заказа
+    await callback_query.message.edit_text(f"Информация по заказу {order_id}", reply_markup=keyboard)
+
+# Блок для отладки - конец
 
 async def get_user_name(message: types.Message):
     """Обрабатывает имя пользователя"""
@@ -182,7 +209,7 @@ async def notify_admin(order_id):
             f"📍 *Дата заказа*: {order.order_date.strftime('%d.%m.%Y %H:%M')}\n"
             f"📌 *Статус*: {order.get_status_display()}"
         )
-        await bot.send_message(chat_id=ADMIN_ID, text=message, parse_mode="Markdown")
+        await bot.send_message(chat_id=ADMIN_ID, text=message, parse_mode="HTML")
     except Order.DoesNotExist:
         print(f"Ошибка: заказ {order_id} не найден.")
 
@@ -200,7 +227,7 @@ async def send_analytics(call: types.CallbackQuery):
         f"💰 *Общая выручка*: {total_revenue} руб."
     )
 
-    await call.message.answer(message, parse_mode="Markdown")
+    await call.message.answer(message, parse_mode="HTML")
 
 @dp.message(Command("link"))
 async def link_telegram(message: types.Message):
@@ -239,13 +266,16 @@ async def get_orders(message: types.Message):
 
                 text = "📋 **Список заказов:**\n\n"
                 for order in orders:
-                    # Изменим 'items' на 'products' для корректного отображения
                     products_list = ", ".join([product['name'] for product in order['products']])
                     text += f"🆔 {order['id']} | Товары: {products_list} | Статус: {order['status']}\n"
 
-                await message.answer(text, parse_mode="Markdown")
+                await message.answer(text, parse_mode="HTML")
             else:
-                await message.answer("❌ Ошибка получения заказов. Проверьте настройки API.")
+                await message.answer(f"❌ Ошибка получения заказов. Статус ответа API: {response.status}")
+                # Логируем детали ответа
+                response_text = await response.text()
+                print(f"API response: {response_text}")
+
 
 
 
@@ -276,7 +306,7 @@ async def order_detail(message: types.Message):
                         f"📌 Статус: {order['status']}\n"
                         f"💰 Сумма: {order['total_price']} руб."
                     )
-                    await message.answer(text, parse_mode="Markdown")
+                    await message.answer(text, parse_mode="HTML")
                 elif response.status == 404:
                     await message.answer("❌ Заказ не найден. Проверьте ID.")
                 else:
