@@ -12,6 +12,10 @@ from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton, ReplyKeyboardMarkup
 from django.conf import settings    # Импортируем настройки Django
+from aiogram.fsm.context import FSMContext
+from aiogram.types import CallbackQuery
+from aiogram.filters.callback_data import CallbackData
+
 
 # Настройка логирования
 logging.basicConfig(
@@ -35,6 +39,9 @@ if not django.conf.settings.configured:
     except RuntimeError as e:
         print(f"❌ Ошибка Django setup: {e}")
         sys.exit(1)
+
+# Временное хранилище данных пользователя для регистрации
+user_data = {}
 
 
 # Инициализация бота и диспетчера
@@ -68,56 +75,97 @@ admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="📊 Аналитика", callback_data="analytics")]
 ])
 
+
+def create_admin_keyboard(order_id):
+    return InlineKeyboardMarkup(inline_keyboard=[
+        [InlineKeyboardButton(text="📦 Мои заказы", callback_data=f"orders_{order_id}")],
+        [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"confirm_{order_id}")],
+        [InlineKeyboardButton(text="🚚 В доставке", callback_data=f"in_delivery_{order_id}")],
+        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{order_id}")],
+        [InlineKeyboardButton(text="📊 Аналитика", callback_data="analytics")]
+    ])
+
+def get_keyboard_for_user(user):
+    """Выбирает правильную клавиатуру в зависимости от прав пользователя"""
+    if user.is_superuser:
+        return admin_keyboard
+    elif user.is_staff:
+        return staff_keyboard
+    return customer_keyboard
+
+
 request_contact_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="📲 Отправить контакт", request_contact=True)]],
     resize_keyboard=True
 )
 
 # from core.models import User, Order  # Импортируем модель пользователя и заказа
+
 # 🔹 Привязка Telegram ID
 @dp.message(Command("start"))
 async def start(message: types.Message):
-    """Приветственное сообщение и проверка регистрации"""
+    """Приветствие и автоматическая регистрация пользователя"""
+    from core.models import User  # Импортируем модель пользователя
 
-    user = await get_user_by_telegram_id(message.from_user.id)
+    telegram_id = message.from_user.id
+    username = message.from_user.username
+
+    # Проверяем, есть ли уже пользователь
+    user = await sync_to_async(User.objects.filter(telegram_id=telegram_id).first, thread_sensitive=True)()
 
     if user:
-        keyboard = get_user_keyboard(user)
+        keyboard = get_keyboard_for_user(user)  # Выбираем правильную клавиатуру
         await message.answer("🌸 Добро пожаловать! Вы авторизованы.", reply_markup=keyboard)
+
     else:
-        await message.answer(
-            "🔑 Вы не зарегистрированы!\nОтправьте ваш контакт, чтобы привязать Telegram ID.",
-            reply_markup=request_contact_keyboard
-        )
+        # Новый пользователь, запрашиваем имя
+        await message.answer("🔹 Добро пожаловать! Введите ваше имя для регистрации.")
+        dp.message.register(get_user_name, F.text)
 
-async def get_user_by_telegram_id(telegram_id):
-    """Получает пользователя по Telegram ID"""
-    from core.models import User
-    return await asyncio.to_thread(User.objects.filter, telegram_id=telegram_id).first()
 
-def get_user_keyboard(user):
-    """Выбирает клавиатуру в зависимости от роли"""
-    if user.is_admin:
-        return admin_keyboard
-    elif user.is_staff:
-        return staff_keyboard
-    return customer_keyboard
+async def get_user_name(message: types.Message):
+    """Обрабатывает имя пользователя"""
+    from core.models import User  # Импортируем модель пользователя
+
+    telegram_id = message.from_user.id
+    username = message.from_user.username
+    full_name = message.text.strip()
+
+    # Сохраняем имя и запрашиваем телефон
+    user_data[telegram_id] = {"full_name": full_name, "username": username}
+
+    request_contact_keyboard = ReplyKeyboardMarkup(
+        keyboard=[[KeyboardButton(text="📲 Отправить контакт", request_contact=True)]],
+        resize_keyboard=True
+    )
+
+    await message.answer("📞 Отправьте ваш номер телефона для завершения регистрации.",
+                         reply_markup=request_contact_keyboard)
+
 
 @dp.message(F.contact)
-async def register_telegram_id(message: types.Message):
-    """Обрабатывает отправленный контакт и привязывает Telegram ID"""
-    user_phone = message.contact.phone_number
-    from core.models import User
+async def register_user(message: types.Message):
+    """Регистрирует пользователя по переданному контакту"""
+    from core.models import User  # Импортируем модель пользователя
 
-    user = await asyncio.to_thread(User.objects.filter, phone_number=user_phone).first()
+    telegram_id = message.from_user.id
+    phone_number = message.contact.phone_number
 
-    if user:
-        user.telegram_id = message.from_user.id
-        await asyncio.to_thread(user.save)
-        keyboard = get_user_keyboard(user)
-        await message.answer("✅ Telegram ID успешно привязан!", reply_markup=keyboard)
-    else:
-        await message.answer("❌ Ваш номер не найден в базе. Пожалуйста, зарегистрируйтесь на сайте.")
+    # Получаем ранее введенное имя
+    user_info = user_data.pop(telegram_id, {})
+    full_name = user_info.get("full_name", "Пользователь")
+    username = user_info.get("username", None)
+
+    # Создаем пользователя в БД
+    user = await sync_to_async(User.objects.create)(
+        telegram_id=telegram_id,
+        username=username or f"user_{telegram_id}",
+        first_name=full_name,
+        phone_number=phone_number
+    )
+
+    await message.answer("✅ Регистрация завершена! Вы можете пользоваться ботом.", reply_markup=customer_keyboard)
+
 
 # 🔹 Уведомление админа о новом заказе
 async def notify_admin(order_id):
@@ -165,12 +213,14 @@ async def link_telegram(message: types.Message):
     user_id = int(args[1])
     from core.models import User  # Импортируем здесь, чтобы избежать проблем с зависимостями
 
-    user = await sync_to_async(User.objects.filter)(id=user_id)
-    if user.exists():
-        user = await sync_to_async(user.update)(telegram_id=message.from_user.id)
+    user = await sync_to_async(User.objects.filter(id=user_id).first)()
+    if user:
+        user.telegram_id = message.from_user.id  # Привязка Telegram ID
+        await sync_to_async(user.save)()
         await message.reply("✅ Telegram успешно привязан к вашему аккаунту!")
     else:
         await message.reply("❌ Пользователь не найден.")
+
 
 
 
@@ -178,56 +228,124 @@ async def link_telegram(message: types.Message):
 @dp.message(Command("orders"))
 async def get_orders(message: types.Message):
     """Получить список заказов"""
+    headers = {"Authorization": f"Bearer {settings.TELEGRAM_BOT_TOKEN}"}
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}/orders/") as response:
+        async with session.get(f"{API_URL}/orders/", headers=headers) as response:
             if response.status == 200:
                 orders = await response.json()
+                if not orders:
+                    await message.answer("📭 У вас пока нет заказов.")
+                    return
+
                 text = "📋 **Список заказов:**\n\n"
                 for order in orders:
-                    text += f"🆔 {order['id']} | {order['status']}\n"
-                if message.from_user.id == ADMIN_ID:
-                    for order in orders:
-                        keyboard = admin_keyboard(order["id"])
-                        await message.answer(f"🆔 Заказ {order['id']} | Статус: {order['status']}",
-                                             reply_markup=keyboard)
-                else:
-                    await message.answer(text, parse_mode="Markdown")
+                    # Изменим 'items' на 'products' для корректного отображения
+                    products_list = ", ".join([product['name'] for product in order['products']])
+                    text += f"🆔 {order['id']} | Товары: {products_list} | Статус: {order['status']}\n"
+
+                await message.answer(text, parse_mode="Markdown")
             else:
-                await message.answer("❌ Ошибка получения заказов.")
+                await message.answer("❌ Ошибка получения заказов. Проверьте настройки API.")
+
+
 
 
 # 🔹 Обработчик команды /order <id>
 @dp.message(Command("order"))
-async def get_order_detail(message: types.Message):
+async def order_detail(message: types.Message):
     """Получить детали конкретного заказа"""
     try:
         order_id = int(message.text.split()[1])
+        headers = {"Authorization": f"Bearer {settings.TELEGRAM_BOT_TOKEN}"}
         async with aiohttp.ClientSession() as session:
-            async with session.get(f"{API_URL}/orders/{order_id}/") as response:
+            async with session.get(f"{API_URL}/orders/{order_id}/", headers=headers) as response:
                 if response.status == 200:
                     order = await response.json()
+                    delivery_address = order.get('delivery_address', 'Не указан')
+
+                    # Получаем дату заказа из поля 'created_at', которое переименовано в 'order_date' на сервере
+                    created_at = order.get('created_at',
+                                           'Дата не доступна')  # Уже получаем как 'created_at' через сериализатор
+
+                    products_list = ", ".join([product['name'] for product in order['products']])
                     text = (
                         f"🛒 **Заказ {order['id']}**\n"
-                        f"📦 Товары: {order['items']}\n"
-                        f"📍 Доставка: {order['delivery_address']}\n"
-                        f"📅 Дата: {order['created_at']}\n"
-                        f"📌 Статус: {order['status']}"
+                        f"📦 Товары: {products_list}\n"
+                        f"📍 Доставка: {delivery_address}\n"
+                        f"📅 Дата: {created_at}\n"
+                        f"📌 Статус: {order['status']}\n"
+                        f"💰 Сумма: {order['total_price']} руб."
                     )
                     await message.answer(text, parse_mode="Markdown")
+                elif response.status == 404:
+                    await message.answer("❌ Заказ не найден. Проверьте ID.")
                 else:
-                    await message.answer("❌ Заказ не найден.")
+                    await message.answer("❌ Ошибка при получении данных заказа.")
     except (IndexError, ValueError):
-        await message.answer("⚠️ Введите корректный ID заказа. Пример: `/order 123`")
+        await message.answer("⚠️ Введите корректный ID заказа. Пример: `/order 7`")
+
+
+# 🔹 Обработчик оформления заказа
+@dp.message(Command("new_order"))
+async def new_order(message: types.Message, state: FSMContext):
+    """Оформление нового заказа с выбором адреса"""
+    user_id = message.from_user.id
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_URL}/user/{user_id}/address") as response:
+            if response.status == 200:
+                user_data = await response.json()
+                saved_address = user_data.get("delivery_address")
+
+                if saved_address:
+                    keyboard = InlineKeyboardMarkup(inline_keyboard=[
+                        [InlineKeyboardButton(text=f"📍 {saved_address}", callback_data="use_saved_address")],
+                        [InlineKeyboardButton(text="🆕 Ввести новый", callback_data="new_address")]
+                    ])
+                    await message.answer("Выберите адрес доставки:", reply_markup=keyboard)
+                else:
+                    await message.answer("Введите ваш адрес доставки:")
+                    await state.set_state("waiting_for_address")
+
+
+@dp.message(F.state == "waiting_for_address")
+async def get_delivery_address(message: types.Message, state: FSMContext):
+    """Сохранение нового адреса"""
+    user_id = message.from_user.id
+    address = message.text
+
+    async with aiohttp.ClientSession() as session:
+        await session.post(f"{API_URL}/user/{user_id}/address", json={"delivery_address": address})
+
+    await message.answer(f"✅ Адрес сохранен: {address}\nТеперь можно оформить заказ!")
+    await state.clear()
+
+
+@dp.callback_query(F.data == "use_saved_address")
+async def use_saved_address(callback: CallbackQuery):
+    """Использование сохраненного адреса"""
+    user_id = callback.from_user.id
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_URL}/user/{user_id}/address") as response:
+            if response.status == 200:
+                user_data = await response.json()
+                address = user_data.get("delivery_address", "Не указан")
+
+                await callback.message.answer(f"✅ Используем сохраненный адрес: {address}\nЗаказ оформлен!")
+                # Здесь можно отправить данные заказа на API
+
+    await callback.answer()
+
+
+
 
 # 🔹 Обработчик inline-кнопок (админка)
 @dp.callback_query()
 async def handle_callback(call: types.CallbackQuery):
     """Обработчик нажатий на кнопки админки"""
     if call.from_user.id != ADMIN_ID:
-        await call.answer("У вас нет прав для выполнения этого действия.", show_alert=True)
+        await call.answer("🚫 У вас нет прав для выполнения этого действия.", show_alert=True)
         return
 
-    # Извлекаем order_id из callback_data
     data_parts = call.data.split("_")
     if len(data_parts) != 2:
         await call.answer("❌ Ошибка данных!", show_alert=True)
@@ -240,11 +358,10 @@ async def handle_callback(call: types.CallbackQuery):
 
     order_id = int(order_id)
 
-    # Исправленный mapping (соответствует БД)
     status_mapping = {
-        "confirm": "processing",      # "В работе"
-        "in_delivery": "delivering",  # "В доставке"
-        "cancel": "canceled"          # "Отменен"
+        "confirm": "processing",
+        "in_delivery": "delivering",
+        "cancel": "canceled"
     }
 
     if action not in status_mapping:
@@ -253,14 +370,14 @@ async def handle_callback(call: types.CallbackQuery):
 
     new_status = status_mapping[action]
 
-    # Отправляем запрос в API
+    headers = {"Authorization": f"Bearer {settings.TELEGRAM_BOT_TOKEN}"}
     async with aiohttp.ClientSession() as session:
-        print(f"Отправляем запрос: {API_URL}/orders/{order_id}/update/ со статусом: {new_status}")
-        async with session.post(f"{API_URL}/orders/{order_id}/update/", json={"status": new_status}) as response:
+        async with session.post(f"{API_URL}/orders/{order_id}/update/", json={"status": new_status}, headers=headers) as response:
             if response.status == 200:
-                await call.message.answer(f"✅ Заказ {order_id} теперь {new_status}", reply_markup=admin_keyboard(order_id))
+                await call.message.edit_text(f"✅ Заказ {order_id} теперь {new_status}")
             else:
                 await call.message.answer("❌ Ошибка обновления заказа.")
+
 
 # 🔹 Запуск бота
 async def main():
@@ -269,6 +386,3 @@ async def main():
 
 if __name__ == "__main__":
     asyncio.run(main())
-
-
-

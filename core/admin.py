@@ -28,7 +28,7 @@ class OrderAdmin(admin.ModelAdmin):
     search_fields = ('user__username', 'id')
 
     def total_price(self, obj):
-        return sum(product.price for product in obj.products.all())  # Подсчет суммы заказа
+        return obj.total_price  # Теперь используется свойство модели
 
     total_price.short_description = "Общая стоимость"  # Название в админке
 

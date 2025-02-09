@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+
+{% block content %}
+<h2>👤 Личный кабинет</h2>
+<form method="post">
+    {% csrf_token %}
+    {{ form.as_p }}
+    <button type="submit">💾 Сохранить</button>
+</form>
+<a href="{% url 'index' %}">⬅️ На главную</a>
+{% endblock %}

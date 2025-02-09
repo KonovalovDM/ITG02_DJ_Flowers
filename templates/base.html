@@ -34,6 +34,7 @@
                     {% if user.is_authenticated %}
                         <li class="nav-item"><a class="nav-link" href="{% url 'order_history' %}">Мои заказы</a></li>
                         <li class="nav-item"><a class="nav-link" href="{% url 'cart' %}">Моя корзина</a></li>
+                        <li class="nav-item"><a class="nav-link" href="{% url 'profile' %}">Кабинет</a></li>
                         <li class="nav-item">
                         <form action="{% url 'logout' %}" method="post" style="display:inline;">
                             {% csrf_token %}

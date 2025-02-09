@@ -9,6 +9,8 @@ from core.telegram_bot import notify_admin
 from asgiref.sync import sync_to_async
 from django.contrib.auth.forms import UserCreationForm
 from django.contrib.auth import login
+from .forms import UserUpdateForm  # Импорт формы обновления профиля
+
 
 import asyncio
 import threading
@@ -64,8 +66,8 @@ def place_order(request):
             order.save()
             form.save_m2m()
 
-            # Асинхронный вызов из синхронного кода
-            threading.Thread(target=lambda: asyncio.run(notify_admin(order.id))).start()
+            # Асинхронный вызов
+            asyncio.create_task(notify_admin(order.id))
 
             messages.success(request, '✅ Заказ успешно создан!')
             return redirect('order_history')
@@ -110,4 +112,17 @@ def cart_view(request):
     cart = request.session.get("cart", {})  # Загружаем корзину
     return render(request, "cart.html", {"cart": cart})
 
+@login_required
+def profile(request):
+    """Страница профиля пользователя"""
+    if request.method == "POST":
+        form = UserUpdateForm(request.POST, instance=request.user)
+        if form.is_valid():
+            form.save()
+            messages.success(request, "✅ Данные успешно обновлены!")
+            return redirect("profile")
+    else:
+        form = UserUpdateForm(instance=request.user)
+
+    return render(request, "profile.html", {"form": form})
 

@@ -16,3 +16,9 @@ class OrderForm(forms.ModelForm):
     class Meta:
         model = Order
         fields = ['products']
+
+class UserUpdateForm(forms.ModelForm):
+    """Форма обновления данных профиля"""
+    class Meta:
+        model = User
+        fields = ["first_name", "last_name", "email", "phone_number", "telegram_id" ]

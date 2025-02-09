@@ -3,16 +3,18 @@ from django.contrib.auth.models import AbstractUser
 from django.db import models
 from django.contrib.auth import get_user_model
 
+
 class User(AbstractUser):
     """Расширенная модель пользователя"""
     telegram_id = models.BigIntegerField(null=True, blank=True, unique=True, verbose_name="Telegram ID")
-    # Поле is_staff уже есть в AbstractUser, его переопределять не нужно
-    # is_admin обычно определяется через is_superuser, который тоже уже есть в AbstractUser
-#    is_staff = models.BooleanField(default=False, verbose_name="Сотрудник")
-#    is_admin = models.BooleanField(default=False, verbose_name="Администратор")
+    telegram_username = models.CharField(max_length=32, null=True, blank=True, verbose_name="Telegram Username")
+    phone_number = models.CharField(max_length=15, null=True, blank=True, unique=True, verbose_name="Телефон")
+    delivery_address = models.TextField(null=True, blank=True)  # Поле для сохранения адреса
+
 
     def __str__(self):
-        return self.telegram_id or self.username
+        # Преобразуем telegram_id в строку, если оно не None, иначе возвращаем username
+        return str(self.telegram_id) if self.telegram_id is not None else self.username
 
     @property
     def is_admin(self):
@@ -49,6 +51,10 @@ class Order(models.Model):
     products = models.ManyToManyField(Product, verbose_name="Товары")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="Статус")
     order_date = models.DateTimeField(auto_now_add=True, verbose_name="Дата заказа")
+
+    @property
+    def total_price(self):
+        return sum(product.price for product in self.products.all())
 
     def __str__(self):
         return f"Заказ {self.id} - {self.user.username}"

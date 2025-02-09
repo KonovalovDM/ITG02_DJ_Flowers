@@ -1,13 +1,11 @@
 # API для заказов
-
-from rest_framework.decorators import api_view
+from rest_framework.permissions import IsAuthenticated, IsAdminUser
+from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
-from rest_framework import status
+from rest_framework import status, serializers
+from django.views.decorators.csrf import csrf_exempt
 from .models import Order, Product
 from .serializers import OrderSerializer, ProductSerializer
-from rest_framework.permissions import IsAuthenticated
-from rest_framework.decorators import permission_classes
-from django.views.decorators.csrf import csrf_exempt
 
 @api_view(['GET'])
 def product_list(request):
@@ -16,10 +14,8 @@ def product_list(request):
     serializer = ProductSerializer(products, many=True)
     return Response(serializer.data)
 
-
-
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])  # Проверяем, авторизован ли пользователь
+@permission_classes([IsAuthenticated])  # Только авторизованные пользователи могут просматривать заказы
 def order_list(request):
     """Список заказов: админ видит все, пользователи — только свои"""
     if request.user.is_staff:
@@ -30,24 +26,31 @@ def order_list(request):
     serializer = OrderSerializer(orders, many=True)
     return Response(serializer.data)
 
-@csrf_exempt  # Отключает CSRF для этого API-метода
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])  # Требуется аутентификация для обновления статуса
 def update_order_status(request, order_id):
     """Обновление статуса заказа"""
     try:
         order = Order.objects.get(id=order_id)
+
+        # Проверка прав пользователя (админ или сам пользователь)
+        if not (request.user.is_staff or order.user == request.user):
+            return Response({'error': 'Недостаточно прав для изменения статуса заказа'},
+                            status=status.HTTP_403_FORBIDDEN)
+
         new_status = request.data.get('status', order.status)
-        print(f"Обновление заказа {order_id} -> {new_status}")  # Добавляем отладку
+        if new_status not in ['processing', 'delivering', 'canceled']:
+            return Response({'error': 'Неверный статус'}, status=status.HTTP_400_BAD_REQUEST)
+
         order.status = new_status
         order.save()
-        order.refresh_from_db()  # Добавляем обновление ORM
+
         return Response({'message': 'Статус заказа обновлен', 'status': order.status}, status=status.HTTP_200_OK)
     except Order.DoesNotExist:
         return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['GET'])
-def get_order_detail(request, order_id):
+def order_detail(request, order_id):
     """Детали конкретного заказа"""
     try:
         order = Order.objects.get(id=order_id)
@@ -56,4 +59,24 @@ def get_order_detail(request, order_id):
     except Order.DoesNotExist:
         return Response({'error': 'Заказ не найден'}, status=404)
 
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def get_delivery_address(request):
+    """Получить сохраненный адрес доставки"""
+    user = request.user
+    return Response({'delivery_address': user.delivery_address or 'Не указан'}, status=status.HTTP_200_OK)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def save_delivery_address(request):
+    """Сохранить новый адрес доставки"""
+    user = request.user
+    new_address = request.data.get('delivery_address', '').strip()
+
+    if not new_address:
+        return Response({'error': 'Адрес не может быть пустым'}, status=status.HTTP_400_BAD_REQUEST)
+
+    user.delivery_address = new_address
+    user.save()
+    return Response({'message': 'Адрес доставки сохранен'}, status=status.HTTP_200_OK)
 
