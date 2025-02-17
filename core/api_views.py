@@ -6,6 +6,8 @@ from rest_framework import status, serializers
 from django.views.decorators.csrf import csrf_exempt
 from .models import Order, Product
 from .serializers import OrderSerializer, ProductSerializer
+from rest_framework.authentication import TokenAuthentication
+from rest_framework.permissions import AllowAny
 
 @api_view(['GET'])
 def product_list(request):
@@ -15,7 +17,7 @@ def product_list(request):
     return Response(serializer.data)
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])  # Только авторизованные пользователи могут просматривать заказы
+@permission_classes([IsAuthenticated])
 def order_list(request):
     """Список заказов: админ видит все, пользователи — только свои"""
     if request.user.is_staff:
@@ -25,6 +27,7 @@ def order_list(request):
 
     serializer = OrderSerializer(orders, many=True)
     return Response(serializer.data)
+
 
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])  # Требуется аутентификация для обновления статуса
@@ -80,3 +83,15 @@ def save_delivery_address(request):
     user.save()
     return Response({'message': 'Адрес доставки сохранен'}, status=status.HTTP_200_OK)
 
+@csrf_exempt
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])  # Доступ только авторизованным
+def api_orders(request):
+    """Возвращает список заказов (для бота)"""
+    if request.user.is_staff:
+        orders = Order.objects.all()  # Админ видит все заказы
+    else:
+        orders = Order.objects.filter(user=request.user)  # Пользователь видит только свои заказы
+
+    serializer = OrderSerializer(orders, many=True)
+    return Response(serializer.data, status=status.HTTP_200_OK)

@@ -249,13 +249,12 @@ async def link_telegram(message: types.Message):
         await message.reply("❌ Пользователь не найден.")
 
 
-
-
 # 🔹 Обработчик команды /orders
 @dp.message(Command("orders"))
 async def get_orders(message: types.Message):
     """Получить список заказов"""
-    headers = {"Authorization": f"Bearer {settings.TELEGRAM_BOT_TOKEN}"}
+    headers = {"Authorization": f"Token {settings.TELEGRAM_BOT_TOKEN}"}  # <-- Используем Token
+
     async with aiohttp.ClientSession() as session:
         async with session.get(f"{API_URL}/orders/", headers=headers) as response:
             if response.status == 200:
@@ -266,18 +265,16 @@ async def get_orders(message: types.Message):
 
                 text = "📋 **Список заказов:**\n\n"
                 for order in orders:
-                    products_list = ", ".join([product['name'] for product in order['products']])
-                    text += f"🆔 {order['id']} | Товары: {products_list} | Статус: {order['status']}\n"
+                    text += f"🆔 {order['id']} | Статус: {order['status']}\n"
 
-                await message.answer(text, parse_mode="HTML")
+                # Разбиваем текст на части по 4096 символов
+                for chunk in [text[i:i + 4000] for i in range(0, len(text), 4000)]:
+                    await message.answer(chunk, parse_mode="HTML")
+
             else:
-                await message.answer(f"❌ Ошибка получения заказов. Статус ответа API: {response.status}")
-                # Логируем детали ответа
                 response_text = await response.text()
-                print(f"API response: {response_text}")
-
-
-
+                await message.answer(f"❌ Ошибка получения заказов. Код: {response.status}")
+                print(response_text)  # Логируем ответ API, но не отправляем в Telegram
 
 
 # 🔹 Обработчик команды /order <id>

@@ -35,6 +35,7 @@ ALLOWED_HOSTS = []
 INSTALLED_APPS = [
     'core', # Должно быть перед 'django.contrib.auth'
     'rest_framework',
+    'rest_framework.authtoken',  # Добавляем сюда
     'flowers',
     'bot',
     'django.contrib.admin',
@@ -80,6 +81,8 @@ TEMPLATES = [
 ]
 
 CSRF_TRUSTED_ORIGINS = ["http://127.0.0.1:8000"]
+CSRF_COOKIE_SECURE = False
+SESSION_COOKIE_SECURE = False
 
 MEDIA_URL = "/media/"
 MEDIA_ROOT = os.path.join(BASE_DIR, "media")
@@ -149,3 +152,14 @@ TELEGRAM_ADMIN_ID = 415285890  # <-- Замени на свой Telegram ID
 
 # API URL для взаимодействия с ботом
 API_URL = "http://127.0.0.1:8000/api"
+
+REST_FRAMEWORK = {
+    'DEFAULT_AUTHENTICATION_CLASSES': (
+        'rest_framework.authentication.TokenAuthentication',
+    ),
+    'DEFAULT_PERMISSION_CLASSES': (
+        'rest_framework.permissions.IsAuthenticated',
+    ),
+}
+
+# TELEGRAM_BOT_TOKEN = "6234bb013c4c37780c3b09d6961e0f21949beafc"   # это токен сгенерирован в Django специально для Token-аутентификации
