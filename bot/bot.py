@@ -16,7 +16,6 @@ from aiogram.fsm.context import FSMContext
 from aiogram.types import CallbackQuery
 from aiogram.filters.callback_data import CallbackData
 
-
 # Настройка логирования
 logging.basicConfig(
     level=logging.DEBUG,  # Устанавливаем уровень логирования на DEBUG
@@ -43,7 +42,6 @@ if not django.conf.settings.configured:
 # Временное хранилище данных пользователя для регистрации
 user_data = {}
 
-
 # Инициализация бота и диспетчера
 TOKEN = settings.TELEGRAM_BOT_TOKEN
 bot = Bot(token=TOKEN)
@@ -54,6 +52,9 @@ ADMIN_ID = settings.TELEGRAM_ADMIN_ID
 
 # URL API Django-сервера
 API_URL = settings.API_URL
+
+# Для API-запросов в bot.py используем TELEGRAM_API_TOKEN
+headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
 
 # 🔹 Клавиатуры
 customer_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -91,13 +92,10 @@ def get_keyboard_for_user(user):
         return staff_keyboard
     return customer_keyboard
 
-
 request_contact_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="📲 Отправить контакт", request_contact=True)]],
     resize_keyboard=True
 )
-
-# from core.models import User, Order  # Импортируем модель пользователя и заказа
 
 # 🔹 Привязка Telegram ID
 @dp.message(Command("start"))
@@ -130,23 +128,23 @@ async def start(message: types.Message):
 
 # Блок для отладки - начало
 
-@dp.callback_query(lambda c: c.data == 'orders')
-async def process_orders(callback_query: types.CallbackQuery):
-    await callback_query.answer("📦 Тут будет список ваших заказов.")
-
-@dp.callback_query(lambda c: c.data == 'confirm')
-async def process_confirm(callback_query: types.CallbackQuery):
-    await callback_query.answer("✅ Заказ подтвержден.")
-
-@dp.callback_query(lambda c: c.data == 'in_delivery')
-async def process_delivery(callback_query: types.CallbackQuery):
-    await callback_query.answer("🚚 Заказ в доставке.")
-
-@dp.callback_query(lambda c: c.data.startswith("orders_"))
-async def process_order(callback_query: types.CallbackQuery):
-    order_id = callback_query.data.split("_")[1]
-    keyboard = create_admin_keyboard(order_id)  # создаем клавиатуру для этого заказа
-    await callback_query.message.edit_text(f"Информация по заказу {order_id}", reply_markup=keyboard)
+# @dp.callback_query(lambda c: c.data == 'orders')
+# async def process_orders(callback_query: types.CallbackQuery):
+#     await callback_query.answer("📦 Тут будет список ваших заказов.")
+#
+# @dp.callback_query(lambda c: c.data == 'confirm')
+# async def process_confirm(callback_query: types.CallbackQuery):
+#     await callback_query.answer("✅ Заказ подтвержден.")
+#
+# @dp.callback_query(lambda c: c.data == 'in_delivery')
+# async def process_delivery(callback_query: types.CallbackQuery):
+#     await callback_query.answer("🚚 Заказ в доставке.")
+#
+# @dp.callback_query(lambda c: c.data.startswith("orders_"))
+# async def process_order(callback_query: types.CallbackQuery):
+#     order_id = callback_query.data.split("_")[1]
+#     keyboard = create_admin_keyboard(order_id)  # создаем клавиатуру для этого заказа
+#     await callback_query.message.edit_text(f"Информация по заказу {order_id}", reply_markup=keyboard)
 
 # Блок для отладки - конец
 
@@ -168,7 +166,6 @@ async def get_user_name(message: types.Message):
 
     await message.answer("📞 Отправьте ваш номер телефона для завершения регистрации.",
                          reply_markup=request_contact_keyboard)
-
 
 @dp.message(F.contact)
 async def register_user(message: types.Message):
@@ -192,7 +189,6 @@ async def register_user(message: types.Message):
     )
 
     await message.answer("✅ Регистрация завершена! Вы можете пользоваться ботом.", reply_markup=customer_keyboard)
-
 
 # 🔹 Уведомление админа о новом заказе
 async def notify_admin(order_id):
@@ -253,9 +249,11 @@ async def link_telegram(message: types.Message):
 @dp.message(Command("orders"))
 async def get_orders(message: types.Message):
     """Получить список заказов"""
-    headers = {"Authorization": f"Token {settings.TELEGRAM_BOT_TOKEN}"}  # <-- Используем Token
+    headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}  # <-- Используем Token
 
     async with aiohttp.ClientSession() as session:
+        print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
+
         async with session.get(f"{API_URL}/orders/", headers=headers) as response:
             if response.status == 200:
                 orders = await response.json()
@@ -283,8 +281,10 @@ async def order_detail(message: types.Message):
     """Получить детали конкретного заказа"""
     try:
         order_id = int(message.text.split()[1])
-        headers = {"Authorization": f"Bearer {settings.TELEGRAM_BOT_TOKEN}"}
+        headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
         async with aiohttp.ClientSession() as session:
+            print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
+
             async with session.get(f"{API_URL}/orders/{order_id}/", headers=headers) as response:
                 if response.status == 200:
                     order = await response.json()
@@ -307,7 +307,9 @@ async def order_detail(message: types.Message):
                 elif response.status == 404:
                     await message.answer("❌ Заказ не найден. Проверьте ID.")
                 else:
-                    await message.answer("❌ Ошибка при получении данных заказа.")
+                    response_text = await response.text()
+                    await message.answer(
+                        f"❌ Ошибка при получении данных заказа. Код: {response.status}\n{response_text}")
     except (IndexError, ValueError):
         await message.answer("⚠️ Введите корректный ID заказа. Пример: `/order 7`")
 
@@ -318,6 +320,8 @@ async def new_order(message: types.Message, state: FSMContext):
     """Оформление нового заказа с выбором адреса"""
     user_id = message.from_user.id
     async with aiohttp.ClientSession() as session:
+        print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
+
         async with session.get(f"{API_URL}/user/{user_id}/address") as response:
             if response.status == 200:
                 user_data = await response.json()
@@ -352,6 +356,8 @@ async def use_saved_address(callback: CallbackQuery):
     """Использование сохраненного адреса"""
     user_id = callback.from_user.id
     async with aiohttp.ClientSession() as session:
+        print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
+
         async with session.get(f"{API_URL}/user/{user_id}/address") as response:
             if response.status == 200:
                 user_data = await response.json()
@@ -361,9 +367,6 @@ async def use_saved_address(callback: CallbackQuery):
                 # Здесь можно отправить данные заказа на API
 
     await callback.answer()
-
-
-
 
 # 🔹 Обработчик inline-кнопок (админка)
 @dp.callback_query()
@@ -397,7 +400,7 @@ async def handle_callback(call: types.CallbackQuery):
 
     new_status = status_mapping[action]
 
-    headers = {"Authorization": f"Bearer {settings.TELEGRAM_BOT_TOKEN}"}
+    headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
     async with aiohttp.ClientSession() as session:
         async with session.post(f"{API_URL}/orders/{order_id}/update/", json={"status": new_status}, headers=headers) as response:
             if response.status == 200:

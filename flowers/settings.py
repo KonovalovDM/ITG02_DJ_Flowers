@@ -143,7 +143,7 @@ STATICFILES_DIRS = [os.path.join(BASE_DIR, "static")]
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
-# Токен Telegram-бота
+# Токен от BotFather для работы Telegram-бота
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "7638821933:AAEpS3aWrBoDmgH_lk9GIfCdhuFCaPNcCPw") # <-- Замени на свой ТОКЕН
 TELEGRAM_BOT_URL = "https://t.me/@AioFlowerDeliveryBot"  # Ссылка на бота
 
@@ -162,4 +162,5 @@ REST_FRAMEWORK = {
     ),
 }
 
-# TELEGRAM_BOT_TOKEN = "6234bb013c4c37780c3b09d6961e0f21949beafc"   # это токен сгенерирован в Django специально для Token-аутентификации
+# DRF-токен для аутентификации API
+TELEGRAM_API_TOKEN = "6234bb013c4c37780c3b09d6961e0f21949beafc"   # это токен сгенерирован в Django специально для Token-аутентификации

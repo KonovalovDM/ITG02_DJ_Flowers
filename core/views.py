@@ -63,11 +63,12 @@ def place_order(request):
         if form.is_valid():
             order = form.save(commit=False)
             order.user = request.user
+            order.delivery_address = form.cleaned_data['delivery_address'] or request.user.delivery_address
             order.save()
             form.save_m2m()
 
-            # Асинхронный вызов
-            asyncio.create_task(notify_admin(order.id))
+            # ✅ Запускаем асинхронную отправку уведомления в отдельном потоке
+            threading.Thread(target=lambda: asyncio.run(notify_admin(order.id))).start()
 
             messages.success(request, '✅ Заказ успешно создан!')
             return redirect('order_history')
@@ -75,17 +76,39 @@ def place_order(request):
         form = OrderForm()
     return render(request, 'order.html', {'form': form})
 
+@login_required
+def repeat_order(request, order_id):
+    """Повторяет заказ с возможностью смены адреса"""
+    old_order = get_object_or_404(Order, id=order_id, user=request.user)
+
+    if request.method == "POST":
+        form = OrderForm(request.POST)
+        if form.is_valid():
+            new_order = form.save(commit=False)
+            new_order.user = request.user
+            new_order.delivery_address = form.cleaned_data["delivery_address"] or old_order.delivery_address
+            new_order.price = old_order.price  # Копируем цену заказа
+            new_order.save()
+            new_order.products.set(old_order.products.all())  # Копируем товары
+            messages.success(request, "✅ Заказ успешно повторен!")
+            return redirect("order_history")
+    else:
+        form = OrderForm(initial={"delivery_address": old_order.delivery_address})
+
+    return render(request, "repeat_order.html", {"form": form, "old_order": old_order})
 
 @login_required
 def order_history(request):
-    """История заказов"""
-    orders = Order.objects.filter(user=request.user)
+    """История заказов с отображением товаров и адреса доставки"""
+    orders = Order.objects.filter(user=request.user) \
+        .select_related("user") \
+        .prefetch_related("products")  # Загружаем связанные товары
     return render(request, 'order_history.html', {'orders': orders})
 
 
-def catalog_view(request):
-    products = Product.objects.all()
-    return render(request, 'catalog.html', {'products': products})
+# def catalog_view(request):
+#     products = Product.objects.all()
+#     return render(request, 'catalog.html', {'products': products})
 
 
 def add_to_cart(request, product_id):
@@ -124,5 +147,4 @@ def profile(request):
     else:
         form = UserUpdateForm(instance=request.user)
 
-    return render(request, "profile.html", {"form": form})
-
+    return render(request, "profile.html", {"form": form, "delivery_address": request.user.delivery_address})

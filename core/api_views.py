@@ -53,6 +53,7 @@ def update_order_status(request, order_id):
         return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['GET'])
+@permission_classes([IsAuthenticated])  # <-- Только для авторизованных
 def order_detail(request, order_id):
     """Детали конкретного заказа"""
     try:
@@ -60,17 +61,17 @@ def order_detail(request, order_id):
         serializer = OrderSerializer(order)
         return Response(serializer.data)
     except Order.DoesNotExist:
-        return Response({'error': 'Заказ не найден'}, status=404)
+        return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['GET'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])  # <-- Только для авторизованных
 def get_delivery_address(request):
     """Получить сохраненный адрес доставки"""
     user = request.user
     return Response({'delivery_address': user.delivery_address or 'Не указан'}, status=status.HTTP_200_OK)
 
 @api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@permission_classes([IsAuthenticated])  # <-- Только для авторизованных
 def save_delivery_address(request):
     """Сохранить новый адрес доставки"""
     user = request.user

@@ -11,6 +11,7 @@
             <th>Статус</th>
             <th>Товары</th>
             <th>Цена</th>
+            <th>Адрес доставки</th>
         </tr>
     </thead>
     <tbody>
@@ -28,6 +29,11 @@
                 {% for product in order.products.all %}
                     <p>{{ product.price }}</p>
                 {% endfor %}
+            </td>
+            <td>{{ order.delivery_address }}</td> <!-- Добавляем вывод адреса доставки -->
+                    <!-- 🔄 Кнопка повторного заказа -->
+            <td>
+            <a href="{% url 'repeat_order' order.id %}" class="btn btn-sm btn-primary">🔄 Повторить</a>
             </td>
         </tr>
         {% endfor %}

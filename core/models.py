@@ -31,7 +31,7 @@ class User(AbstractUser):
 class Product(models.Model):
     """Модель для хранения информации о цветах"""
     name = models.CharField(max_length=255, verbose_name="Название")
-    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Цена")
+    price = models.DecimalField(max_digits=10, decimal_places=2, default=1000.0, verbose_name="Цена")
     image = models.ImageField(upload_to="products/", verbose_name="Изображение")
 
     def __str__(self):
@@ -49,8 +49,11 @@ class Order(models.Model):
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Пользователь")
     products = models.ManyToManyField(Product, verbose_name="Товары")
+    price = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Цена")
     status = models.CharField(max_length=20, choices=STATUS_CHOICES, default='pending', verbose_name="Статус")
     order_date = models.DateTimeField(auto_now_add=True, verbose_name="Дата заказа")
+    delivery_address = models.CharField(max_length=255, blank=True, null=True,
+                                        verbose_name="Адрес доставки")
 
     @property
     def total_price(self):
