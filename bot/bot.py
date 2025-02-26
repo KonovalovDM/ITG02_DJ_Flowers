@@ -63,90 +63,135 @@ customer_keyboard = InlineKeyboardMarkup(inline_keyboard=[
 
 staff_keyboard = InlineKeyboardMarkup(inline_keyboard=[
     [InlineKeyboardButton(text="📦 Мои заказы", callback_data="orders")],
-    [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm")],
-    [InlineKeyboardButton(text="🚚 В доставке", callback_data="in_delivery")],
 ])
 
-admin_keyboard = InlineKeyboardMarkup(inline_keyboard=[
-    [InlineKeyboardButton(text="📦 Мои заказы", callback_data="orders")],
-    [InlineKeyboardButton(text="✅ Подтвердить", callback_data="confirm")],
-    [InlineKeyboardButton(text="🚚 В доставке", callback_data="in_delivery")],
-    [InlineKeyboardButton(text="❌ Отменить", callback_data="cancel")],
+admin_static_keyboard = InlineKeyboardMarkup(inline_keyboard=[
+    [InlineKeyboardButton(text="📦 Мои заказы", callback_data="admin_orders")],
     [InlineKeyboardButton(text="📊 Аналитика", callback_data="analytics")]
 ])
 
+
 def create_admin_keyboard(order_id):
+    """Создает клавиатуру управления конкретным заказом"""
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="📦 Мои заказы", callback_data=f"orders_{order_id}")],
         [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"confirm_{order_id}")],
         [InlineKeyboardButton(text="🚚 В доставке", callback_data=f"in_delivery_{order_id}")],
-        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{order_id}")],
-        [InlineKeyboardButton(text="📊 Аналитика", callback_data="analytics")]
+        [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{order_id}")]
     ])
 
+
 def get_keyboard_for_user(user):
-    """Выбирает правильную клавиатуру в зависимости от прав пользователя"""
+    """Выбирает клавиатуру в зависимости от роли пользователя"""
     if user.is_superuser:
-        return admin_keyboard
+        return admin_static_keyboard  # Только общие кнопки
     elif user.is_staff:
         return staff_keyboard
     return customer_keyboard
+
 
 request_contact_keyboard = ReplyKeyboardMarkup(
     keyboard=[[KeyboardButton(text="📲 Отправить контакт", request_contact=True)]],
     resize_keyboard=True
 )
 
-# 🔹 Привязка Telegram ID
+
+# 🔹 Обработчик /start
 @dp.message(Command("start"))
 async def start(message: types.Message):
     """Приветствие и автоматическая регистрация пользователя"""
-    from core.models import User  # Импортируем модель пользователя
+    from core.models import User
 
     telegram_id = message.from_user.id
     username = message.from_user.username
 
-    # Проверяем, есть ли уже пользователь
     user = await sync_to_async(User.objects.filter(telegram_id=telegram_id).first, thread_sensitive=True)()
 
     if user:
-        # В зависимости от роли пользователя выбираем клавиатуру
-        if user.is_admin:
-            keyboard = admin_keyboard  # Клавиатура для администратора
-        elif user.is_staff:
-            keyboard = staff_keyboard  # Клавиатура для сотрудника
-        else:
-            keyboard = customer_keyboard  # Клавиатура для клиента
-
-#        keyboard = get_keyboard_for_user(user)  # Выбираем правильную клавиатуру
+        keyboard = get_keyboard_for_user(user)
         await message.answer("🌸 Добро пожаловать! Вы авторизованы.", reply_markup=keyboard)
-
     else:
-        # Новый пользователь, запрашиваем имя
         await message.answer("🔹 Добро пожаловать! Введите ваше имя для регистрации.")
         dp.message.register(get_user_name, F.text)
 
-# Блок для отладки - начало
 
-# @dp.callback_query(lambda c: c.data == 'orders')
-# async def process_orders(callback_query: types.CallbackQuery):
-#     await callback_query.answer("📦 Тут будет список ваших заказов.")
-#
-# @dp.callback_query(lambda c: c.data == 'confirm')
-# async def process_confirm(callback_query: types.CallbackQuery):
-#     await callback_query.answer("✅ Заказ подтвержден.")
-#
-# @dp.callback_query(lambda c: c.data == 'in_delivery')
-# async def process_delivery(callback_query: types.CallbackQuery):
-#     await callback_query.answer("🚚 Заказ в доставке.")
-#
-# @dp.callback_query(lambda c: c.data.startswith("orders_"))
-# async def process_order(callback_query: types.CallbackQuery):
-#     order_id = callback_query.data.split("_")[1]
-#     keyboard = create_admin_keyboard(order_id)  # создаем клавиатуру для этого заказа
-#     await callback_query.message.edit_text(f"Информация по заказу {order_id}", reply_markup=keyboard)
+# 🔹 Обработчик выбора заказа для админа
+@dp.callback_query(lambda c: c.data == "admin_orders")
+async def show_admin_orders(callback_query: types.CallbackQuery):
+    """Выводит список заказов с кнопками управления"""
+    headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_URL}/orders/", headers=headers) as response:
+            if response.status == 200:
+                orders = await response.json()
+                if not orders:
+                    await callback_query.message.answer("📭 Нет активных заказов.")
+                    return
 
-# Блок для отладки - конец
+                text = "📋 **Список заказов:**\n\n"
+                for order in orders:
+                    text += f"🆔 {order['id']} | Статус: {order['status']}\n"
+                    keyboard = create_admin_keyboard(order["id"])
+                    await callback_query.message.answer(text, reply_markup=keyboard)
+
+            else:
+                await callback_query.answer("❌ Ошибка получения заказов!", show_alert=True)
+
+
+# 🔹 Обработчик inline-кнопок (админка)
+@dp.callback_query()
+async def handle_callback(call: types.CallbackQuery):
+    """Обработчик админских действий с заказами"""
+    print(f"🔹 Получен callback_data: {call.data}")
+
+    if call.from_user.id != TELEGRAM_ADMIN_ID:
+        await call.answer("🚫 У вас нет прав для выполнения этого действия.", show_alert=True)
+        return
+
+    data_parts = call.data.split("_")
+
+    if len(data_parts) == 1:
+        if data_parts[0] == "analytics":
+            await call.answer("📊 Аналитика пока недоступна.", show_alert=True)
+        elif data_parts[0] == "admin_orders":
+            await show_admin_orders(call)
+        else:
+            await call.answer("❌ Ошибка данных!", show_alert=True)
+        return
+
+    if len(data_parts) != 2:
+        await call.answer("❌ Ошибка данных!", show_alert=True)
+        return
+
+    action, order_id = data_parts
+    if not order_id.isdigit():
+        await call.answer("❌ Неверный формат ID заказа.", show_alert=True)
+        return
+
+    order_id = int(order_id)
+    status_mapping = {
+        "confirm": "processing",
+        "in_delivery": "delivering",
+        "cancel": "canceled"
+    }
+
+    if action not in status_mapping:
+        await call.answer("❌ Некорректное действие!", show_alert=True)
+        return
+
+    new_status = status_mapping[action]
+    headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(f"{API_URL}/orders/{order_id}/update/", json={"status": new_status},
+                                headers=headers) as response:
+            response_text = await response.text()
+            print(f"📡 API ответил: {response_text}")
+
+            if response.status == 200:
+                await call.message.edit_text(f"✅ Заказ {order_id} теперь {new_status}")
+            else:
+                await call.answer("❌ Ошибка обновления заказа.", show_alert=True)
+
 
 async def get_user_name(message: types.Message):
     """Обрабатывает имя пользователя"""
@@ -190,6 +235,7 @@ async def register_user(message: types.Message):
 
     await message.answer("✅ Регистрация завершена! Вы можете пользоваться ботом.", reply_markup=customer_keyboard)
 
+
 # 🔹 Уведомление админа о новом заказе
 async def notify_admin(order_id):
     """Отправляет администратору уведомление о новом заказе"""
@@ -209,13 +255,6 @@ async def notify_admin(order_id):
     except Order.DoesNotExist:
         print(f"Ошибка: заказ {order_id} не найден.")
 
-# async def notify_admin(message: str):
-#     """Отправка уведомления админу в Telegram"""
-#     try:
-#         await bot.send_message(TELEGRAM_ADMIN_ID, message)
-#     except Exception as e:
-#         logging.error(f"Ошибка при отправке сообщения админу: {e}")
-
 
 # 🔹 Кнопка "📊 Аналитика"
 @dp.callback_query(F.data == "analytics")
@@ -232,6 +271,7 @@ async def send_analytics(call: types.CallbackQuery):
     )
 
     await call.message.answer(message, parse_mode="HTML")
+
 
 @dp.message(Command("link"))
 async def link_telegram(message: types.Message):
@@ -263,6 +303,9 @@ async def get_orders(message: types.Message):
         print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
 
         async with session.get(f"{API_URL}/orders/", headers=headers) as response:
+            response_text = await response.text()
+            print(f"📡 API ответил: {response_text}")  # <-- Отладка: смотрим, что вернул сервер
+
             if response.status == 200:
                 orders = await response.json()
                 if not orders:
@@ -278,9 +321,9 @@ async def get_orders(message: types.Message):
                     await message.answer(chunk, parse_mode="HTML")
 
             else:
-                response_text = await response.text()
                 await message.answer(f"❌ Ошибка получения заказов. Код: {response.status}")
                 print(response_text)  # Логируем ответ API, но не отправляем в Telegram
+
 
 
 # 🔹 Обработчик команды /order <id>
@@ -290,36 +333,46 @@ async def order_detail(message: types.Message):
     try:
         order_id = int(message.text.split()[1])
         headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
+        print(f"🔍 Отправляемый заголовок: {headers}")  # ✅ Отладочный вывод
         async with aiohttp.ClientSession() as session:
             print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
 
             async with session.get(f"{API_URL}/orders/{order_id}/", headers=headers) as response:
                 if response.status == 200:
                     order = await response.json()
-                    delivery_address = order.get('delivery_address', 'Не указан')
+                    print(f"🔍 Данные заказа: {order}")  # ✅ Проверка, какие данные приходят
 
-                    # Получаем дату заказа из поля 'created_at', которое переименовано в 'order_date' на сервере
-                    created_at = order.get('created_at',
-                                           'Дата не доступна')  # Уже получаем как 'created_at' через сериализатор
+                    # ✅ Получаем адрес доставки, если его нет, ставим "Не указан"
+                    delivery_address = order.get("delivery_address", "Не указан")
 
-                    products_list = ", ".join([product['name'] for product in order['products']])
+                    # ✅ Получаем дату заказа, если поле называется иначе (например, order_date)
+                    created_at = order.get("order_date", order.get("created_at", "Дата не указана"))
+
+                    # ✅ Формируем список товаров
+                    products_list = ", ".join([product["name"] for product in order.get("products", [])])
+
                     text = (
-                        f"🛒 **Заказ {order['id']}**\n"
+                        f"🛒 **Заказ {order.get('id', 'Неизвестный')}**\n"
                         f"📦 Товары: {products_list}\n"
                         f"📍 Доставка: {delivery_address}\n"
                         f"📅 Дата: {created_at}\n"
-                        f"📌 Статус: {order['status']}\n"
-                        f"💰 Сумма: {order['total_price']} руб."
+                        f"📌 Статус: {order.get('status', 'Неизвестен')}\n"
+                        f"💰 Сумма: {order.get('total_price', '0')} руб."
                     )
                     await message.answer(text, parse_mode="HTML")
+
                 elif response.status == 404:
                     await message.answer("❌ Заказ не найден. Проверьте ID.")
+
                 else:
                     response_text = await response.text()
                     await message.answer(
-                        f"❌ Ошибка при получении данных заказа. Код: {response.status}\n{response_text}")
+                        f"❌ Ошибка при получении данных заказа. Код: {response.status}\n{response_text}"
+                    )
+
     except (IndexError, ValueError):
         await message.answer("⚠️ Введите корректный ID заказа. Пример: `/order 7`")
+
 
 
 # 🔹 Обработчик оформления заказа
@@ -375,46 +428,6 @@ async def use_saved_address(callback: CallbackQuery):
                 # Здесь можно отправить данные заказа на API
 
     await callback.answer()
-
-# 🔹 Обработчик inline-кнопок (админка)
-@dp.callback_query()
-async def handle_callback(call: types.CallbackQuery):
-    """Обработчик нажатий на кнопки админки"""
-    if call.from_user.id != ADMIN_ID:
-        await call.answer("🚫 У вас нет прав для выполнения этого действия.", show_alert=True)
-        return
-
-    data_parts = call.data.split("_")
-    if len(data_parts) != 2:
-        await call.answer("❌ Ошибка данных!", show_alert=True)
-        return
-
-    action, order_id = data_parts
-    if not order_id.isdigit():
-        await call.answer("❌ Неверный формат ID заказа.", show_alert=True)
-        return
-
-    order_id = int(order_id)
-
-    status_mapping = {
-        "confirm": "processing",
-        "in_delivery": "delivering",
-        "cancel": "canceled"
-    }
-
-    if action not in status_mapping:
-        await call.answer("❌ Некорректное действие!", show_alert=True)
-        return
-
-    new_status = status_mapping[action]
-
-    headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
-    async with aiohttp.ClientSession() as session:
-        async with session.post(f"{API_URL}/orders/{order_id}/update/", json={"status": new_status}, headers=headers) as response:
-            if response.status == 200:
-                await call.message.edit_text(f"✅ Заказ {order_id} теперь {new_status}")
-            else:
-                await call.message.answer("❌ Ошибка обновления заказа.")
 
 
 # 🔹 Запуск бота
