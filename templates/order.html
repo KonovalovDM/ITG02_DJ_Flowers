@@ -1,11 +1,39 @@
-{% extends 'base.html' %}
-{% block title %}Оформление заказа{% endblock %}
+{% extends "base.html" %}
 
 {% block content %}
-<h2>Оформление заказа</h2>
-<form method="POST">
+<h2>🛒 Оформление заказа</h2>
+
+<form method="post">
     {% csrf_token %}
-    {{ form.as_p }}
-    <button type="submit" class="btn btn-success">Подтвердить заказ</button>
+
+    <label for="id_delivery_address">📍 Выберите адрес доставки:</label>
+    <select name="delivery_address" id="id_delivery_address">
+        {% for address in saved_addresses %}
+        <option value="{{ address }}" {% if address == form.initial.delivery_address %}selected{% endif %}>
+            {{ address }}
+        </option>
+        {% endfor %}
+        <option value="new">➕ Ввести новый адрес</option>
+    </select>
+
+    <!-- Поле для нового адреса (скрыто по умолчанию) -->
+    <input type="text" name="new_address" id="new_address" placeholder="Введите новый адрес" style="display:none;">
+
+    <script>
+        document.getElementById("id_delivery_address").addEventListener("change", function() {
+            let newAddressField = document.getElementById("new_address");
+            if (this.value === "new") {
+                newAddressField.style.display = "block";
+                newAddressField.required = true;
+            } else {
+                newAddressField.style.display = "none";
+                newAddressField.required = false;
+            }
+        });
+    </script>
+
+    <button type="submit">✅ Оформить заказ</button>
 </form>
+
+<a href="{% url 'cart' %}">⬅️ Вернуться в корзину</a>
 {% endblock %}

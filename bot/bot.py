@@ -48,7 +48,7 @@ bot = Bot(token=TOKEN)
 dp = Dispatcher()
 
 # ID администратора (кому отправлять уведомления)
-ADMIN_ID = settings.TELEGRAM_ADMIN_ID
+TELEGRAM_ADMIN_ID = settings.TELEGRAM_ADMIN_ID
 
 # URL API Django-сервера
 API_URL = settings.API_URL
@@ -205,9 +205,17 @@ async def notify_admin(order_id):
             f"📍 *Дата заказа*: {order.order_date.strftime('%d.%m.%Y %H:%M')}\n"
             f"📌 *Статус*: {order.get_status_display()}"
         )
-        await bot.send_message(chat_id=ADMIN_ID, text=message, parse_mode="HTML")
+        await bot.send_message(chat_id=TELEGRAM_ADMIN_ID, text=message, parse_mode="HTML")
     except Order.DoesNotExist:
         print(f"Ошибка: заказ {order_id} не найден.")
+
+# async def notify_admin(message: str):
+#     """Отправка уведомления админу в Telegram"""
+#     try:
+#         await bot.send_message(TELEGRAM_ADMIN_ID, message)
+#     except Exception as e:
+#         logging.error(f"Ошибка при отправке сообщения админу: {e}")
+
 
 # 🔹 Кнопка "📊 Аналитика"
 @dp.callback_query(F.data == "analytics")
