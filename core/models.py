@@ -45,6 +45,7 @@ class Order(models.Model):
         ('processing', 'В работе'),
         ('delivering', 'В доставке'),
         ('completed', 'Выполнен'),
+        ("canceled", "Отменён"),
     ]
 
     user = models.ForeignKey(User, on_delete=models.CASCADE, verbose_name="Пользователь")

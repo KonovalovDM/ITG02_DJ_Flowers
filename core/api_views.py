@@ -35,21 +35,27 @@ def update_order_status(request, order_id):
     """Обновление статуса заказа"""
     try:
         order = Order.objects.get(id=order_id)
+        print(f"🔍 Получен запрос на обновление заказа {order.id}")  # ✅ Лог запроса
 
         # Проверка прав пользователя (админ или сам пользователь)
         if not (request.user.is_staff or order.user == request.user):
+            print("🚫 Недостаточно прав для изменения статуса заказа")  # ✅ Лог ошибки прав
             return Response({'error': 'Недостаточно прав для изменения статуса заказа'},
                             status=status.HTTP_403_FORBIDDEN)
 
         new_status = request.data.get('status', order.status)
+        print(f"🔄 Новый статус: {new_status}")  # ✅ Логируем переданный статус
         if new_status not in ['processing', 'delivering', 'canceled']:
+            print("❌ Неверный статус!")  # ✅ Лог ошибки статуса
             return Response({'error': 'Неверный статус'}, status=status.HTTP_400_BAD_REQUEST)
 
         order.status = new_status
         order.save()
+        print(f"✅ Статус заказа {order.id} успешно обновлен: {order.status}")  # ✅ Лог успешного обновления
 
         return Response({'message': 'Статус заказа обновлен', 'status': order.status}, status=status.HTTP_200_OK)
     except Order.DoesNotExist:
+        print("❌ Заказ не найден!")  # ✅ Лог ошибки отсутствия заказа
         return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
 @api_view(['GET'])

@@ -169,9 +169,9 @@ async def handle_callback(call: types.CallbackQuery):
 
     order_id = int(order_id)
     status_mapping = {
-        "confirm": "processing",
-        "in_delivery": "delivering",
-        "cancel": "canceled"
+        "confirm": "processing",        # В работе
+        "in_delivery": "delivering",    # В доставке
+        "cancel": "canceled"            # Отменён
     }
 
     if action not in status_mapping:
@@ -182,13 +182,17 @@ async def handle_callback(call: types.CallbackQuery):
     headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
 
     async with aiohttp.ClientSession() as session:
-        async with session.post(f"{API_URL}/orders/{order_id}/update/", json={"status": new_status},
-                                headers=headers) as response:
+        payload = {"status": new_status}
+        print(f"📡 Отправка запроса: {API_URL}/orders/{order_id}/update/ с данными {payload}")  # Логируем запрос
+
+        async with session.post(f"{API_URL}/orders/{order_id}/update/", json=payload, headers=headers) as response:
             response_text = await response.text()
-            print(f"📡 API ответил: {response_text}")
+            print(f"📡 API ответил: {response.status} - {response_text}")  # Лог ответа API
 
             if response.status == 200:
-                await call.message.edit_text(f"✅ Заказ {order_id} теперь {new_status}")
+                # ✅ После обновления статуса, обновляем сообщение с кнопками
+                new_text = f"✅ Заказ {order_id} теперь в статусе: {new_status}"
+                await call.message.edit_text(new_text, reply_markup=create_admin_keyboard(order_id))  # Обновляем текст
             else:
                 await call.answer("❌ Ошибка обновления заказа.", show_alert=True)
 
