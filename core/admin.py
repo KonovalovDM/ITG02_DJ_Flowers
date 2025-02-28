@@ -36,7 +36,3 @@ class OrderAdmin(admin.ModelAdmin):
     total_price.short_description = "Общая стоимость"  # Название в админке
 
 admin.site.register(Order, OrderAdmin)  # Оставляем только одну регистрацию с кастомной админкой
-
-
-from django.contrib import admin
-from .models import Order
