@@ -65,29 +65,47 @@ class Order(models.Model):
 
 
 class Report(models.Model):
-    """Модель отчета по заказам"""
+    """Модель отчета по заказам с разбивкой по статусам"""
     date = models.DateField(auto_now_add=True, verbose_name="Дата отчета")
-    total_orders = models.PositiveIntegerField(verbose_name="Количество заказов")
-    total_revenue = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Выручка")
 
-    @classmethod
-    def generate_report(cls):
-        """Создает или обновляет отчет за текущий день"""
-        from datetime import date
-        from core.models import Order
+    # Общие суммы и количество
+    total_orders = models.PositiveIntegerField(default=0, verbose_name="Всего заказов")
+    total_revenue = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Общая выручка")
 
-        today = date.today()
-        total_orders = Order.objects.count()
-        total_revenue = sum(order.total_price for order in Order.objects.all())
+    # Разбивка по статусам
+    pending_orders = models.PositiveIntegerField(default=0, verbose_name="В обработке (заказы)")
+    pending_revenue = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="В обработке (выручка)")
 
-        report, created = cls.objects.update_or_create(
-            date=today,
-            defaults={"total_orders": total_orders, "total_revenue": total_revenue}
-        )
-        return report
+    processing_orders = models.PositiveIntegerField(default=0, verbose_name="В работе (заказы)")
+    processing_revenue = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="В работе (выручка)")
+
+    delivering_orders = models.PositiveIntegerField(default=0, verbose_name="В доставке (заказы)")
+    delivering_revenue = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="В доставке (выручка)")
+
+    completed_orders = models.PositiveIntegerField(default=0, verbose_name="Выполнен (заказы)")
+    completed_revenue = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Выполнен (выручка)")
+
+    canceled_orders = models.PositiveIntegerField(default=0, verbose_name="Отменён (заказы)")
+    canceled_revenue = models.DecimalField(max_digits=10, decimal_places=2, default=0, verbose_name="Отменён (выручка)")
+
+    # @classmethod
+    # def generate_report(cls):
+    #     """Создает или обновляет отчет за текущий день"""
+    #     from datetime import date
+    #     from core.models import Order
+    #
+    #     today = date.today()
+    #     total_orders = Order.objects.count()
+    #     total_revenue = sum(order.total_price for order in Order.objects.all())
+    #
+    #     report, created = cls.objects.update_or_create(
+    #         date=today,
+    #         defaults={"total_orders": total_orders, "total_revenue": total_revenue}
+    #     )
+    #     return report
 
     def __str__(self):
-        return f"Отчет {self.date}"
+        return f"Аналитика {self.date}"
 
     class Meta:
         verbose_name = "Отчет"

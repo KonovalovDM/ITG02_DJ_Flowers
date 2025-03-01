@@ -267,41 +267,62 @@ async def notify_admin(order_id):
         print(f"Ошибка: заказ {order_id} не найден.")
 
 
+import re
+
+# 🔹 Функция экранирования специальных символов MarkdownV2
+def escape_md(text):
+    """Экранирует специальные символы MarkdownV2"""
+    return re.sub(r"([_*\[\]()~`>#\+\-=|{}.!])", r"\\\1", str(text))
+
 # 🔹 Кнопка "📊 Аналитика"
 @dp.callback_query(F.data == "analytics")
 async def send_analytics(call: types.CallbackQuery):
-    """Отправляет администраторам статистику заказов"""
-    from core.models import Report, Order
-    import datetime
+    """Отправляет администраторам детальную аналитику"""
+    from core.models import Report
 
-    # ✅ Получаем последний отчёт
+    # ✅ Получаем последний отчет
     report = await asyncio.to_thread(lambda: Report.objects.order_by("-date").first())
 
     if not report:
-        print("📊 Отчётов нет! Создаём новый...")  # ✅ Логируем отсутствие отчёта
+        await call.answer("📊 Данных пока нет. Попробуйте позже.", show_alert=True)
+        return
 
-        # ✅ Считаем количество заказов и общую выручку
-        total_orders = await asyncio.to_thread(Order.objects.count)
-        total_revenue = await asyncio.to_thread(lambda: sum(order.total_price for order in Order.objects.all()))
+    # ✅ Приводим данные к числам, чтобы избежать форматных ошибок
+    pending_orders = int(report.pending_orders)
+    pending_revenue = float(report.pending_revenue)
 
-        # ✅ Создаём новый отчёт
-        report = await asyncio.to_thread(lambda: Report.objects.create(
-            date=datetime.date.today(),
-            total_orders=total_orders,
-            total_revenue=total_revenue
-        ))
+    processing_orders = int(report.processing_orders)
+    processing_revenue = float(report.processing_revenue)
 
-    print(f"📊 Отчёт найден: {report.date}, Заказы: {report.total_orders}, Выручка: {report.total_revenue}")
+    delivering_orders = int(report.delivering_orders)
+    delivering_revenue = float(report.delivering_revenue)
 
+    completed_orders = int(report.completed_orders)
+    completed_revenue = float(report.completed_revenue)
+
+    canceled_orders = int(report.canceled_orders)
+    canceled_revenue = float(report.canceled_revenue)
+
+    total_orders = pending_orders + processing_orders + delivering_orders + completed_orders
+    total_revenue = pending_revenue + processing_revenue + delivering_revenue + completed_revenue
+
+    # ✅ Формируем текст сообщения
     message = (
-        f"📊 *Аналитика продаж ({report.date})*\n"
-        f"📦 *Всего заказов*: {report.total_orders}\n"
-        f"💰 *Общая выручка*: {report.total_revenue} руб."
+        f"📊 *Аналитика продаж {escape_md(report.date)}*\n"
+        f"```\n"
+        f"{escape_md('Статус'):<15} {escape_md('Выручка'):>10} {escape_md('Заказы'):>8}\n"
+        f"{'-' * 34}\n"
+        f"{escape_md('В обработке'):<15} {pending_revenue:>10.2f} {pending_orders:>8}\n"
+        f"{escape_md('В работе'):<15} {processing_revenue:>10.2f} {processing_orders:>8}\n"
+        f"{escape_md('В доставке'):<15} {delivering_revenue:>10.2f} {delivering_orders:>8}\n"
+        f"{escape_md('Выполнен'):<15} {completed_revenue:>10.2f} {completed_orders:>8}\n"
+        f"{'-' * 34}\n"
+        f"{escape_md('ИТОГО'):<15} {total_revenue:>10.2f} {total_orders:>8}\n"
+        f"{escape_md('Отменен'):<15} {canceled_revenue:>10.2f} {canceled_orders:>8}\n"
+        f"```"
     )
 
-    await call.message.answer(message, parse_mode="HTML")
-
-
+    await call.message.answer(message, parse_mode="MarkdownV2")
 
 
 @dp.message(Command("link"))

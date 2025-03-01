@@ -1,10 +1,45 @@
-{% extends 'base.html' %}
-{% block title %}Отчет о продажах{% endblock %}
+{% extends "admin/base_site.html" %}
 
 {% block content %}
-<h2>Отчет о продажах за {{ report.date }}</h2>
-<p>Всего заказов: <strong>{{ report.total_orders }}</strong></p>
-<p>Общая выручка: <strong>{{ report.total_revenue }} руб.</strong></p>
+<h1>📊 Аналитика продаж ({{ report.date }})</h1>
 
-<a href="{% url 'download_sales_report' %}" class="btn btn-primary">Скачать отчет в CSV</a>
+<table border="1">
+    <tr>
+        <th>Статус</th>
+        <th>Выручка</th>
+        <th>Заказы</th>
+    </tr>
+    <tr>
+        <td>В обработке</td>
+        <td>{{ report.pending_revenue }}</td>
+        <td>{{ report.pending_orders }}</td>
+    </tr>
+    <tr>
+        <td>В работе</td>
+        <td>{{ report.processing_revenue }}</td>
+        <td>{{ report.processing_orders }}</td>
+    </tr>
+    <tr>
+        <td>В доставке</td>
+        <td>{{ report.delivering_revenue }}</td>
+        <td>{{ report.delivering_orders }}</td>
+    </tr>
+    <tr>
+        <td>Выполнен</td>
+        <td>{{ report.completed_revenue }}</td>
+        <td>{{ report.completed_orders }}</td>
+    </tr>
+    <tr>
+        <th>ИТОГО</th>
+        <th>{{ report.total_revenue }}</th>
+        <th>{{ report.total_orders }}</th>
+    </tr>
+    <tr>
+        <td>Отменён</td>
+        <td>{{ report.canceled_revenue }}</td>
+        <td>{{ report.canceled_orders }}</td>
+    </tr>
+</table>
+
+<a href="{% url 'download_sales_report' %}" class="button">📥 Скачать CSV</a>
 {% endblock %}
