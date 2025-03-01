@@ -58,7 +58,7 @@ class Order(models.Model):
 
     @property
     def total_price(self):
-        return sum(product.price for product in self.products.all())
+        return sum(product.price for product in self.products.all())    # ✅ Вычисляем сумму заказа
 
     def __str__(self):
         return f"Заказ {self.id} - {self.user.username}"
@@ -70,5 +70,26 @@ class Report(models.Model):
     total_orders = models.PositiveIntegerField(verbose_name="Количество заказов")
     total_revenue = models.DecimalField(max_digits=10, decimal_places=2, verbose_name="Выручка")
 
+    @classmethod
+    def generate_report(cls):
+        """Создает или обновляет отчет за текущий день"""
+        from datetime import date
+        from core.models import Order
+
+        today = date.today()
+        total_orders = Order.objects.count()
+        total_revenue = sum(order.total_price for order in Order.objects.all())
+
+        report, created = cls.objects.update_or_create(
+            date=today,
+            defaults={"total_orders": total_orders, "total_revenue": total_revenue}
+        )
+        return report
+
     def __str__(self):
         return f"Отчет {self.date}"
+
+    class Meta:
+        verbose_name = "Отчет"
+        verbose_name_plural = "Отчеты"
+

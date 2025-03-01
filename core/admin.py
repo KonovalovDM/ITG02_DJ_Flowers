@@ -3,36 +3,57 @@ from django.contrib.auth.admin import UserAdmin
 from django.urls import path
 from django.shortcuts import redirect
 from .models import Report, Product, Order, User
+from django.contrib.admin.sites import site
 
 admin.site.register(Product)
 admin.site.register(User, UserAdmin)
 
-class ReportAdmin(admin.ModelAdmin):
-    change_list_template = "admin/reports.html"
+class CustomUserAdmin(UserAdmin):
+    list_display = ("id", "username", "telegram_id", "email", "is_staff", "is_superuser")
+    search_fields = ("username", "telegram_id", "email")
 
-    def get_urls(self):
-        urls = super().get_urls()
-        custom_urls = [
-            path("reports/", self.admin_site.admin_view(self.reports_view), name="admin-reports"),
-        ]
-        return custom_urls + urls
+    fieldsets = UserAdmin.fieldsets + (
+        ("Дополнительная информация", {"fields": ("telegram_id",)}),
+    )
 
-    def reports_view(self, request):
-        return redirect("/reports/sales/")
-
-admin.site.register(Report, ReportAdmin)
+admin.site.unregister(User)
+admin.site.register(User, CustomUserAdmin)
 
 class OrderAdmin(admin.ModelAdmin):
-    list_display = ('id', 'user', 'status', 'order_date', 'total_price', 'delivery_address')
+    list_display = ('id', 'get_username', 'get_telegram_id', 'status', 'order_date', 'total_price_display', 'delivery_address')
     list_filter = ('status', "order_date")
-    search_fields = ('user__username', 'id')
+    search_fields = ('user__username', 'user__telegram_id', 'id')
     ordering = ("-order_date",)
-    list_editable = ("status", "delivery_address")  # ✅ Теперь можно редактировать в списке заказов
-    fields = ("user", "products", "status", "order_date", "total_price", "delivery_address")  # ✅ Позволяем изменять внутри заказа
+    list_editable = ("status", "delivery_address")  # ✅ Разрешаем менять статус и адрес прямо в списке
+    # ✅ Исключаем `order_date` из полей редактирования
+    readonly_fields = ("order_date", "total_price_display")   # ✅ Эти поля редактировать нельзя
+    fields = ("user", "products", "status", "delivery_address", "total_price_display")  # ✅ Доступные поля при редактировании
 
-    def total_price(self, obj):
-        return obj.total_price  # Теперь используется свойство модели
+    # ✅ Отображение суммы заказа
+    @admin.display(description="Общая стоимость")  # Название в админке
+    def total_price_display(self, obj):
+        return f"{obj.total_price} руб."  # ✅ Теперь это корректно отображается
 
-    total_price.short_description = "Общая стоимость"  # Название в админке
+    def get_username(self, obj):
+        return obj.user.username
 
-admin.site.register(Order, OrderAdmin)  # Оставляем только одну регистрацию с кастомной админкой
+    get_username.short_description = "Имя пользователя"
+
+    def get_telegram_id(self, obj):
+        return obj.user.telegram_id if obj.user.telegram_id else "Не указан"
+
+    get_telegram_id.short_description = "Telegram ID"
+
+if site.is_registered(Order):
+    admin.site.unregister(Order)
+admin.site.register(Order, OrderAdmin)
+
+class ReportAdmin(admin.ModelAdmin):
+    list_display = ("date", "total_orders", "total_revenue")
+    ordering = ("-date",)
+    readonly_fields = ("date", "total_orders", "total_revenue")  # ✅ Делаем отчеты только для чтения
+
+if site.is_registered(Report):
+    admin.site.unregister(Report)
+admin.site.register(Report, ReportAdmin)
+

@@ -216,3 +216,9 @@ def profile(request):
         "form": form,
         "delivery_address": delivery_address
     })
+
+from core.models import Report
+
+def daily_report():
+    """Генерирует отчет ежедневно"""
+    Report.generate_report()

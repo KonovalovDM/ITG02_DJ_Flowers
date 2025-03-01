@@ -76,6 +76,7 @@ def create_admin_keyboard(order_id):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"confirm_{order_id}")],
         [InlineKeyboardButton(text="🚚 В доставке", callback_data=f"in_delivery_{order_id}")],
+        [InlineKeyboardButton(text="✅ Завершить", callback_data=f"complet_{order_id}")],  # Добавляем "Завершить"
         [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{order_id}")]
     ])
 
@@ -151,7 +152,7 @@ async def handle_callback(call: types.CallbackQuery):
 
     if len(data_parts) == 1:
         if data_parts[0] == "analytics":
-            await call.answer("📊 Аналитика пока недоступна.", show_alert=True)
+            await send_analytics(call)  # Теперь аналитика вызывается корректно
         elif data_parts[0] == "admin_orders":
             await show_admin_orders(call)
         else:
@@ -173,7 +174,8 @@ async def handle_callback(call: types.CallbackQuery):
     status_mapping = {
         "confirm": "processing",        # В работе
         "in_delivery": "delivering",    # В доставке
-        "cancel": "canceled"            # Отменён
+        "cancel": "canceled",           # Отменён
+        "complet": "completed"          # Выполнен
     }
 
     if action not in status_mapping:
@@ -269,17 +271,37 @@ async def notify_admin(order_id):
 @dp.callback_query(F.data == "analytics")
 async def send_analytics(call: types.CallbackQuery):
     """Отправляет администраторам статистику заказов"""
-    from core.models import Order
-    total_orders = await asyncio.to_thread(Order.objects.count)
-    total_revenue = await asyncio.to_thread(lambda: sum(order.total_price for order in Order.objects.all()))
+    from core.models import Report, Order
+    import datetime
+
+    # ✅ Получаем последний отчёт
+    report = await asyncio.to_thread(lambda: Report.objects.order_by("-date").first())
+
+    if not report:
+        print("📊 Отчётов нет! Создаём новый...")  # ✅ Логируем отсутствие отчёта
+
+        # ✅ Считаем количество заказов и общую выручку
+        total_orders = await asyncio.to_thread(Order.objects.count)
+        total_revenue = await asyncio.to_thread(lambda: sum(order.total_price for order in Order.objects.all()))
+
+        # ✅ Создаём новый отчёт
+        report = await asyncio.to_thread(lambda: Report.objects.create(
+            date=datetime.date.today(),
+            total_orders=total_orders,
+            total_revenue=total_revenue
+        ))
+
+    print(f"📊 Отчёт найден: {report.date}, Заказы: {report.total_orders}, Выручка: {report.total_revenue}")
 
     message = (
-        f"📊 *Аналитика продаж*\n"
-        f"📦 *Всего заказов*: {total_orders}\n"
-        f"💰 *Общая выручка*: {total_revenue} руб."
+        f"📊 *Аналитика продаж ({report.date})*\n"
+        f"📦 *Всего заказов*: {report.total_orders}\n"
+        f"💰 *Общая выручка*: {report.total_revenue} руб."
     )
 
     await call.message.answer(message, parse_mode="HTML")
+
+
 
 
 @dp.message(Command("link"))

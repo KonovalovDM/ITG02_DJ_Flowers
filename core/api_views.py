@@ -45,7 +45,7 @@ def update_order_status(request, order_id):
 
         new_status = request.data.get('status', order.status)
         print(f"🔄 Новый статус: {new_status}")  # ✅ Логируем переданный статус
-        if new_status not in ['processing', 'delivering', 'canceled']:
+        if new_status not in ['processing', 'delivering', 'completed', 'canceled']:  # ✅ Добавили 'completed'
             print("❌ Неверный статус!")  # ✅ Лог ошибки статуса
             return Response({'error': 'Неверный статус'}, status=status.HTTP_400_BAD_REQUEST)
 
