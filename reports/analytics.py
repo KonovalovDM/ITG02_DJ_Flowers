@@ -46,27 +46,27 @@ from django.utils.timezone import now
 #     return report
 
 
-# def export_sales_report_csv():
-#     """
-#     Экспортирует отчёт о продажах в CSV-файл.
-#     """
-#     today = now().date()
-#     filename = f"sales_report_{today}.csv"
-#
-#     with open(filename, "w", newline="", encoding="utf-8") as file:
-#         writer = csv.writer(file)
-#         writer.writerow(["Дата", "ID заказа", "Клиент", "Сумма", "Статус"])
-#
-#         for order in Order.objects.filter(order_date__date=today):
-#             writer.writerow([
-#                 order.order_date.strftime("%Y-%m-%d"),
-#                 order.id,
-#                 order.user.username if order.user else "Неизвестный клиент",
-#                 order.price,  # ✅ Исправлено с `total_price()` на `price`
-#                 order.get_status_display()
-#             ])
-#
-#     return filename
+def export_sales_report_csv():
+    """
+    Экспортирует отчёт о продажах в CSV-файл.
+    """
+    today = now().date()
+    filename = f"sales_report_{today}.csv"
+
+    with open(filename, "w", newline="", encoding="utf-8") as file:
+        writer = csv.writer(file)
+        writer.writerow(["Дата", "ID заказа", "Клиент", "Сумма", "Статус"])
+
+        for order in Order.objects.filter(order_date__date=today):
+            writer.writerow([
+                order.order_date.strftime("%Y-%m-%d"),
+                order.id,
+                order.user.username if order.user else "Неизвестный клиент",
+                order.price,  # ✅ Исправлено с `total_price()` на `price`
+                order.get_status_display()
+            ])
+
+    return filename
 
 
 from datetime import datetime, timedelta

@@ -11,7 +11,7 @@ class Command(BaseCommand):
     def handle(self, *args, **kwargs):
         # Получаем сегодняшнюю дату и дату вчера
         today = datetime.now().date()
-        yesterday = today - timedelta(days=51)
+        yesterday = today - timedelta(days=30)
 
         # Генерируем отчёт за вчера
         report = generate_sales_report(yesterday, today)

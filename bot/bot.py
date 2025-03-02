@@ -80,6 +80,13 @@ def create_admin_keyboard(order_id):
         [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{order_id}")]
     ])
 
+import re
+
+# 🔹 Функция экранирования специальных символов MarkdownV2
+def escape_md(text):
+    """Экранирует специальные символы MarkdownV2"""
+    return re.sub(r"([_*\[\]()~`>#\+\-=|{}.!])", r"\\\1", str(text))
+
 
 def get_keyboard_for_user(user):
     """Выбирает клавиатуру в зависимости от роли пользователя"""
@@ -141,13 +148,24 @@ async def show_admin_orders(callback_query: types.CallbackQuery):
 # 🔹 Обработчик inline-кнопок (админка)
 @dp.callback_query()
 async def handle_callback(call: types.CallbackQuery):
-    """Обработчик админских действий с заказами"""
+    """Обработчик админских действий с заказами (только для админов и персонала)"""
+    from core.models import User
+
     print(f"🔹 Получен callback_data: {call.data}")  # ✅ Лог входящих данных
 
-    if call.from_user.id != TELEGRAM_ADMIN_ID:
-        await call.answer("🚫 У вас нет прав для выполнения этого действия.", show_alert=True)
+    # ✅ Проверяем, является ли пользователь админом или сотрудником
+    user = await asyncio.to_thread(lambda: User.objects.filter(telegram_id=call.from_user.id).first())
+
+    if not user:
+        await call.answer("🚫 Ошибка: пользователь не найден.", show_alert=True)
         return
 
+    if not user.is_staff and not user.is_superuser:
+        # ✅ Передаем обработку в show_user_orders (если это обычный пользователь)
+        await show_user_orders(call)
+        return
+
+    # ✅ Код ниже выполняется только для админов и персонала
     data_parts = call.data.rsplit("_", 1)  # ✅ Разделяем только по последнему "_"
 
     if len(data_parts) == 1:
@@ -201,6 +219,66 @@ async def handle_callback(call: types.CallbackQuery):
                 await call.message.edit_text(new_text, reply_markup=create_admin_keyboard(order_id))  # ✅ Обновляем текст
             else:
                 await call.answer("❌ Ошибка обновления заказа.", show_alert=True)
+
+import re
+
+def escape_md(text):
+    """Экранирует специальные символы MarkdownV2"""
+    return re.sub(r"([_*\[\]()~`>#\+\-=|{}.!])", r"\\\1", str(text))
+
+# 🔹 Показываем заказы пользователя
+# @dp.callback_query(F.data == "orders")
+async def show_user_orders(call: types.CallbackQuery):
+    """Отображает заказы обычного пользователя"""
+    from core.models import User
+    import aiohttp
+
+    telegram_id = call.from_user.id
+
+    # 🔹 Ищем пользователя в БД
+    user = await asyncio.to_thread(lambda: User.objects.filter(telegram_id=telegram_id).first())
+
+    if not user:
+        await call.answer("🚫 Ошибка: пользователь не найден.", show_alert=True)
+        return
+
+    headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
+
+    async with aiohttp.ClientSession() as session:
+        async with session.get(f"{API_URL}/orders/", headers=headers) as response:
+            if response.status != 200:
+                await call.answer("❌ Ошибка получения заказов.", show_alert=True)
+                return
+
+            orders_data = await response.json()
+
+            if not orders_data:
+                await call.answer("📭 У вас пока нет заказов.", show_alert=True)
+                return
+
+    # 🔹 Формируем список заказов
+    orders_text = "📦 *Ваши заказы:*\n\n"
+    for order in orders_data:
+        order_text = (
+            f"🆔 Заказ {escape_md(str(order['id']))}\n"
+            f"📍 Адрес: {escape_md(str(order['delivery_address']))}\n"
+            f"💰 Сумма: {escape_md(str(order['total_price']))} руб\n"
+            f"📅 Дата: {escape_md(str(order['order_date']))}\n"
+            f"📌 Статус: {escape_md(str(order['status']))}\n"
+            f"{escape_md('--------------------------------')}\n"
+        )
+
+        # Если сообщение превысит лимит, отправляем часть и создаём новое
+        if len(orders_text) + len(order_text) > 4000:
+            await call.message.answer(orders_text, parse_mode="MarkdownV2")
+            orders_text = "📦 *Ваши заказы (продолжение...)*\n\n"
+
+        orders_text += order_text
+
+    # Отправляем оставшуюся часть
+    if orders_text:
+        await call.message.answer(orders_text, parse_mode="MarkdownV2")
+
 
 
 
@@ -267,21 +345,24 @@ async def notify_admin(order_id):
         print(f"Ошибка: заказ {order_id} не найден.")
 
 
-import re
-
-# 🔹 Функция экранирования специальных символов MarkdownV2
-def escape_md(text):
-    """Экранирует специальные символы MarkdownV2"""
-    return re.sub(r"([_*\[\]()~`>#\+\-=|{}.!])", r"\\\1", str(text))
-
 # 🔹 Кнопка "📊 Аналитика"
 @dp.callback_query(F.data == "analytics")
 async def send_analytics(call: types.CallbackQuery):
     """Отправляет администраторам детальную аналитику"""
+    from reports.analytics import generate_sales_report  # ⬅️ Переносим импорт внутрь функции
     from core.models import Report
+    from datetime import datetime, timedelta
+    import asyncio
 
-    # ✅ Получаем последний отчет
+    today = datetime.now().date()
+    yesterday = today - timedelta(days=30)
+
+    # Проверяем, есть ли отчёт за вчера
     report = await asyncio.to_thread(lambda: Report.objects.order_by("-date").first())
+
+    if not report or report.date < yesterday:
+        print("🔄 Генерация нового отчёта...")
+        report = await asyncio.to_thread(lambda: generate_sales_report(yesterday, today))
 
     if not report:
         await call.answer("📊 Данных пока нет. Попробуйте позже.", show_alert=True)
@@ -308,17 +389,17 @@ async def send_analytics(call: types.CallbackQuery):
 
     # ✅ Формируем текст сообщения
     message = (
-        f"📊 *Аналитика продаж {escape_md(report.date)}*\n"
+        f"📊 *Аналитика за 30 дней на {escape_md(report.date)}*\n"
         f"```\n"
         f"{escape_md('Статус'):<15} {escape_md('Выручка'):>10} {escape_md('Заказы'):>8}\n"
         f"{'-' * 34}\n"
         f"{escape_md('В обработке'):<15} {pending_revenue:>10.2f} {pending_orders:>8}\n"
         f"{escape_md('В работе'):<15} {processing_revenue:>10.2f} {processing_orders:>8}\n"
         f"{escape_md('В доставке'):<15} {delivering_revenue:>10.2f} {delivering_orders:>8}\n"
-        f"{escape_md('Выполнен'):<15} {completed_revenue:>10.2f} {completed_orders:>8}\n"
+        f"{escape_md('Выполнено'):<15} {completed_revenue:>10.2f} {completed_orders:>8}\n"
         f"{'-' * 34}\n"
         f"{escape_md('ИТОГО'):<15} {total_revenue:>10.2f} {total_orders:>8}\n"
-        f"{escape_md('Отменен'):<15} {canceled_revenue:>10.2f} {canceled_orders:>8}\n"
+        f"{escape_md('Отменено'):<15} {canceled_revenue:>10.2f} {canceled_orders:>8}\n"
         f"```"
     )
 
