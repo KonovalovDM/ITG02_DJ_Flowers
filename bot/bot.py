@@ -80,13 +80,6 @@ def create_admin_keyboard(order_id):
         [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{order_id}")]
     ])
 
-import re
-
-# 🔹 Функция экранирования специальных символов MarkdownV2
-def escape_md(text):
-    """Экранирует специальные символы MarkdownV2"""
-    return re.sub(r"([_*\[\]()~`>#\+\-=|{}.!])", r"\\\1", str(text))
-
 
 def get_keyboard_for_user(user):
     """Выбирает клавиатуру в зависимости от роли пользователя"""
@@ -227,9 +220,9 @@ def escape_md(text):
     return re.sub(r"([_*\[\]()~`>#\+\-=|{}.!])", r"\\\1", str(text))
 
 # 🔹 Показываем заказы пользователя
-# @dp.callback_query(F.data == "orders")
+@dp.callback_query(F.data == "orders")
 async def show_user_orders(call: types.CallbackQuery):
-    """Отображает заказы обычного пользователя"""
+    """Отображает заказы текущего, обычного пользователя"""
     from core.models import User
     import aiohttp
 
@@ -245,14 +238,11 @@ async def show_user_orders(call: types.CallbackQuery):
     headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
 
     async with aiohttp.ClientSession() as session:
-        async with session.get(f"{API_URL}/orders/", headers=headers) as response:
-            if response.status != 200:
-                await call.answer("❌ Ошибка получения заказов.", show_alert=True)
-                return
-
+        logging.debug(f"🔍 Отправляемый токен: {headers}")
+        async with session.get(f"{API_URL}/orders/?telegram_id={telegram_id}", headers=headers) as response:
             orders_data = await response.json()
 
-            if not orders_data:
+            if response.status != 200 or not orders_data:
                 await call.answer("📭 У вас пока нет заказов.", show_alert=True)
                 return
 
@@ -344,6 +334,12 @@ async def notify_admin(order_id):
     except Order.DoesNotExist:
         print(f"Ошибка: заказ {order_id} не найден.")
 
+import re
+
+# 🔹 Функция экранирования специальных символов MarkdownV2
+def escape_md(text):
+    """Экранирует специальные символы MarkdownV2"""
+    return re.sub(r"([_*\[\]()~`>#\+\-=|{}.!])", r"\\\1", str(text))
 
 # 🔹 Кнопка "📊 Аналитика"
 @dp.callback_query(F.data == "analytics")
@@ -430,12 +426,13 @@ async def link_telegram(message: types.Message):
 @dp.message(Command("orders"))
 async def get_orders(message: types.Message):
     """Получить список заказов"""
+    telegram_id = message.from_user.id
     headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}  # <-- Используем Token
 
     async with aiohttp.ClientSession() as session:
         print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
 
-        async with session.get(f"{API_URL}/orders/", headers=headers) as response:
+        async with session.get(f"{API_URL}/orders/?telegram_id={telegram_id}", headers=headers) as response:
             response_text = await response.text()
             print(f"📡 API ответил: {response_text}")  # <-- Отладка: смотрим, что вернул сервер
 
@@ -445,7 +442,7 @@ async def get_orders(message: types.Message):
                     await message.answer("📭 У вас пока нет заказов.")
                     return
 
-                text = "📋 **Список заказов:**\n\n"
+                text = "📋 **Список ваших заказов:**\n\n"
                 for order in orders:
                     text += f"🆔 {order['id']} | Статус: {order['status']}\n"
 
@@ -465,12 +462,13 @@ async def order_detail(message: types.Message):
     """Получить детали конкретного заказа"""
     try:
         order_id = int(message.text.split()[1])
+        telegram_id = message.from_user.id
         headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
         print(f"🔍 Отправляемый заголовок: {headers}")  # ✅ Отладочный вывод
         async with aiohttp.ClientSession() as session:
             print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
 
-            async with session.get(f"{API_URL}/orders/{order_id}/", headers=headers) as response:
+            async with session.get(f"{API_URL}/orders/{order_id}/?telegram_id={telegram_id}", headers=headers) as response:
                 if response.status == 200:
                     order = await response.json()
                     print(f"🔍 Данные заказа: {order}")  # ✅ Проверка, какие данные приходят

@@ -4,8 +4,9 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.response import Response
 from rest_framework import status, serializers
 from django.views.decorators.csrf import csrf_exempt
-from .models import Order, Product
+from .models import Order, Product, User
 from .serializers import OrderSerializer, ProductSerializer
+from django.shortcuts import get_object_or_404
 from rest_framework.authentication import TokenAuthentication
 from rest_framework.permissions import AllowAny
 
@@ -61,11 +62,16 @@ def update_order_status(request, order_id):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])  # <-- Только для авторизованных
 def order_detail(request, order_id):
-    """Детали конкретного заказа"""
+    """Детали заказа: админ видит все, пользователь — только свои"""
     try:
         order = Order.objects.get(id=order_id)
+
+        if not request.user.is_staff and order.user != request.user:
+            return Response({'error': 'Доступ запрещен'}, status=status.HTTP_403_FORBIDDEN)
+
         serializer = OrderSerializer(order)
         return Response(serializer.data)
+
     except Order.DoesNotExist:
         return Response({'error': 'Заказ не найден'}, status=status.HTTP_404_NOT_FOUND)
 
@@ -94,7 +100,7 @@ def save_delivery_address(request):
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])  # Доступ только авторизованным
 def api_orders(request):
-    """Возвращает список заказов (для бота)"""
+    """Админ видит все заказы, пользователь — только свои"""
     if request.user.is_staff:
         orders = Order.objects.all()  # Админ видит все заказы
     else:
@@ -102,3 +108,39 @@ def api_orders(request):
 
     serializer = OrderSerializer(orders, many=True)
     return Response(serializer.data, status=status.HTTP_200_OK)
+
+import logging
+logger = logging.getLogger(__name__)
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_orders(request):
+    user = request.user
+    # Админ видит все заказы, пользователь только свои
+    orders = Order.objects.all() if user.is_staff else Order.objects.filter(user=user)
+
+    logger.debug(f"📦 {user.username} запросил заказы: {[order.id for order in orders]}")
+
+    serializer = OrderSerializer(orders, many=True)
+    return Response(serializer.data)
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def get_order_details(request, order_id):
+    """Возвращает детали заказа, но только если он принадлежит пользователю"""
+    user = request.user  # Получаем авторизованного пользователя
+
+    if user.is_staff:
+        order = get_object_or_404(Order, id=order_id)  # Админ видит все заказы
+    else:
+        order = get_object_or_404(Order, id=order_id, user=user)  # Пользователь только свои
+
+    logger.debug(f"📦 Запрошен заказ {order.id} пользователем {user.username}")
+
+    serializer = OrderSerializer(order)
+    return Response(serializer.data)
+
+
+
+
