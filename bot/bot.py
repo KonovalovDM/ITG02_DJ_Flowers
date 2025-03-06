@@ -42,15 +42,6 @@ logging.basicConfig(
 # Используем logging.debug вместо print
 logging.debug("🔍 PYTHONPATH: %s", sys.path)
 
-# # Защита от повторного запуска setup()
-# if not django.conf.settings.configured:
-#     try:
-#         django.setup()
-#         print("✅ Django настроен!")
-#     except RuntimeError as e:
-#         print(f"❌ Ошибка Django setup: {e}")
-#         sys.exit(1)
-
 # Временное хранилище данных пользователя для регистрации
 user_data = {}
 
