@@ -6,38 +6,50 @@ import sys
 import logging
 import asyncio
 import aiohttp
-import django
-from asgiref.sync import sync_to_async
+import re
+from datetime import datetime, timedelta
+from typing import cast
+
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.filters import Command
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton, ReplyKeyboardMarkup
-from django.conf import settings    # Импортируем настройки Django
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, KeyboardButton, ReplyKeyboardMarkup, CallbackQuery
 from aiogram.fsm.context import FSMContext
-from aiogram.types import CallbackQuery
-from aiogram.filters.callback_data import CallbackData
+
+# Инициализация Django
+import django
+if not os.environ.get("DJANGO_SETTINGS_MODULE"):
+    os.environ.setdefault("DJANGO_SETTINGS_MODULE", "flowers.settings")
+    django.setup()
+
+# Импорты моделей Django и других зависимостей
+from django.conf import settings
+from django.core.exceptions import ObjectDoesNotExist
+from rest_framework.authtoken.models import Token
+from asgiref.sync import sync_to_async
+
+from core.models import User, Order, Report
+from reports.analytics import generate_sales_report
+
+# Проверка путей
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Настройка логирования
 logging.basicConfig(
     level=logging.DEBUG,  # Устанавливаем уровень логирования на DEBUG
     format='%(asctime)s - %(levelname)s - %(message)s',  # Формат вывода
 )
-# Проверка путей
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 
 # Используем logging.debug вместо print
 logging.debug("🔍 PYTHONPATH: %s", sys.path)
 
-# Указываем Django, где искать настройки
-os.environ.setdefault("DJANGO_SETTINGS_MODULE", "flowers.settings")
-
-# Защита от повторного запуска setup()
-if not django.conf.settings.configured:
-    try:
-        django.setup()
-        print("✅ Django настроен!")
-    except RuntimeError as e:
-        print(f"❌ Ошибка Django setup: {e}")
-        sys.exit(1)
+# # Защита от повторного запуска setup()
+# if not django.conf.settings.configured:
+#     try:
+#         django.setup()
+#         print("✅ Django настроен!")
+#     except RuntimeError as e:
+#         print(f"❌ Ошибка Django setup: {e}")
+#         sys.exit(1)
 
 # Временное хранилище данных пользователя для регистрации
 user_data = {}
@@ -52,9 +64,6 @@ TELEGRAM_ADMIN_ID = settings.TELEGRAM_ADMIN_ID
 
 # URL API Django-сервера
 API_URL = settings.API_URL
-
-# Для API-запросов в bot.py используем TELEGRAM_API_TOKEN
-headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
 
 # 🔹 Клавиатуры
 customer_keyboard = InlineKeyboardMarkup(inline_keyboard=[
@@ -76,7 +85,7 @@ def create_admin_keyboard(order_id):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Подтвердить", callback_data=f"confirm_{order_id}")],
         [InlineKeyboardButton(text="🚚 В доставке", callback_data=f"in_delivery_{order_id}")],
-        [InlineKeyboardButton(text="✅ Завершить", callback_data=f"complet_{order_id}")],  # Добавляем "Завершить"
+        [InlineKeyboardButton(text="✅ Завершить", callback_data=f"complet_{order_id}")],
         [InlineKeyboardButton(text="❌ Отменить", callback_data=f"cancel_{order_id}")]
     ])
 
@@ -100,8 +109,6 @@ request_contact_keyboard = ReplyKeyboardMarkup(
 @dp.message(Command("start"))
 async def start(message: types.Message):
     """Приветствие и автоматическая регистрация пользователя"""
-    from core.models import User
-
     telegram_id = message.from_user.id
     username = message.from_user.username
 
@@ -119,7 +126,15 @@ async def start(message: types.Message):
 @dp.callback_query(lambda c: c.data == "admin_orders")
 async def show_admin_orders(callback_query: types.CallbackQuery):
     """Выводит список заказов с кнопками управления"""
-    headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
+    telegram_id = callback_query.from_user.id
+    user = await sync_to_async(User.objects.filter(telegram_id=telegram_id).first)()
+    if not user:
+        await callback_query.answer("🚫 Ошибка: пользователь не найден.", show_alert=True)
+        return
+
+    token = cast(Token, await sync_to_async(Token.objects.filter(user=user).first)())
+    headers = {"Authorization": f"Token {token.key}"}  # Используем токен пользователя
+
     async with aiohttp.ClientSession() as session:
         async with session.get(f"{API_URL}/orders/", headers=headers) as response:
             if response.status == 200:
@@ -142,28 +157,22 @@ async def show_admin_orders(callback_query: types.CallbackQuery):
 @dp.callback_query()
 async def handle_callback(call: types.CallbackQuery):
     """Обработчик админских действий с заказами (только для админов и персонала)"""
-    from core.models import User
-
-    print(f"🔹 Получен callback_data: {call.data}")  # ✅ Лог входящих данных
-
-    # ✅ Проверяем, является ли пользователь админом или сотрудником
-    user = await asyncio.to_thread(lambda: User.objects.filter(telegram_id=call.from_user.id).first())
-
+    telegram_id = call.from_user.id
+    user = await sync_to_async(User.objects.filter(telegram_id=telegram_id).first)()
     if not user:
         await call.answer("🚫 Ошибка: пользователь не найден.", show_alert=True)
         return
 
     if not user.is_staff and not user.is_superuser:
-        # ✅ Передаем обработку в show_user_orders (если это обычный пользователь)
         await show_user_orders(call)
         return
 
-    # ✅ Код ниже выполняется только для админов и персонала
-    data_parts = call.data.rsplit("_", 1)  # ✅ Разделяем только по последнему "_"
+    token = cast(Token, await sync_to_async(Token.objects.filter(user=user).first)())
+    data_parts = call.data.rsplit("_", 1)
 
     if len(data_parts) == 1:
         if data_parts[0] == "analytics":
-            await send_analytics(call)  # Теперь аналитика вызывается корректно
+            await send_analytics(call)
         elif data_parts[0] == "admin_orders":
             await show_admin_orders(call)
         else:
@@ -171,72 +180,71 @@ async def handle_callback(call: types.CallbackQuery):
         return
 
     if len(data_parts) != 2:
-        print("❌ Ошибка данных! data_parts:", data_parts)  # ✅ Лог ошибки формата
+        logging.error(f"❌ Ошибка данных! data_parts: {data_parts}")
         await call.answer("❌ Ошибка данных!", show_alert=True)
         return
 
     action, order_id = data_parts
     if not order_id.isdigit():
-        print(f"❌ Неверный формат ID заказа: {order_id}")  # ✅ Лог ошибки ID
+        logging.error(f"❌ Неверный формат ID заказа: {order_id}")
         await call.answer("❌ Неверный формат ID заказа.", show_alert=True)
         return
 
     order_id = int(order_id)
     status_mapping = {
-        "confirm": "processing",        # В работе
-        "in_delivery": "delivering",    # В доставке
-        "cancel": "canceled",           # Отменён
-        "complet": "completed"          # Выполнен
+        "confirm": "processing",
+        "in_delivery": "delivering",
+        "cancel": "canceled",
+        "complet": "completed"
     }
 
     if action not in status_mapping:
-        print(f"❌ Некорректное действие: {action}")  # ✅ Лог ошибки действия
+        logging.error(f"❌ Некорректное действие: {action}")
         await call.answer("❌ Некорректное действие!", show_alert=True)
         return
 
     new_status = status_mapping[action]
-    print(f"✅ Обновление заказа {order_id}, новый статус: {new_status}")  # ✅ Лог успешного перехода к обновлению
+    logging.info(f"✅ Обновление заказа {order_id}, новый статус: {new_status}")
 
-    headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
+    headers = {"Authorization": f"Token {token.key}"}
     payload = {"status": new_status}
 
     async with aiohttp.ClientSession() as session:
-        print(f"📡 Отправка запроса: {API_URL}/orders/{order_id}/update/ с данными {payload}")  # ✅ Лог запроса
-
+        logging.info(f"📡 Отправка запроса: {API_URL}/orders/{order_id}/update/ с данными {payload}")
         async with session.post(f"{API_URL}/orders/{order_id}/update/", json=payload, headers=headers) as response:
             response_text = await response.text()
-            print(f"📡 API ответил: {response.status} - {response_text}")  # ✅ Лог ответа API
+            logging.info(f"📡 API ответил: {response.status} - {response_text}")
 
             if response.status == 200:
                 new_text = f"✅ Заказ {order_id} теперь в статусе: {new_status}"
-                await call.message.edit_text(new_text, reply_markup=create_admin_keyboard(order_id))  # ✅ Обновляем текст
+                if call.message:
+                    await call.message.edit_text(new_text, reply_markup=create_admin_keyboard(order_id))
             else:
                 await call.answer("❌ Ошибка обновления заказа.", show_alert=True)
 
-import re
 
+# 🔹 Функция экранирования специальных символов MarkdownV2
 def escape_md(text):
     """Экранирует специальные символы MarkdownV2"""
     return re.sub(r"([_*\[\]()~`>#\+\-=|{}.!])", r"\\\1", str(text))
+
 
 # 🔹 Показываем заказы пользователя
 @dp.callback_query(F.data == "orders")
 async def show_user_orders(call: types.CallbackQuery):
     """Отображает заказы текущего, обычного пользователя"""
-    from core.models import User
-    import aiohttp
-
     telegram_id = call.from_user.id
-
-    # 🔹 Ищем пользователя в БД
-    user = await asyncio.to_thread(lambda: User.objects.filter(telegram_id=telegram_id).first())
-
+    user = await sync_to_async(User.objects.filter(telegram_id=telegram_id).first)()
     if not user:
         await call.answer("🚫 Ошибка: пользователь не найден.", show_alert=True)
         return
 
-    headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
+    token = await sync_to_async(Token.objects.filter(user=user).first)()
+    if not token:
+        await call.answer("🚫 Ошибка: токен пользователя не найден.", show_alert=True)
+        return
 
+    headers = {"Authorization": f"Token {token.key}"}
     async with aiohttp.ClientSession() as session:
         logging.debug(f"🔍 Отправляемый токен: {headers}")
         async with session.get(f"{API_URL}/orders/?telegram_id={telegram_id}", headers=headers) as response:
@@ -246,7 +254,6 @@ async def show_user_orders(call: types.CallbackQuery):
                 await call.answer("📭 У вас пока нет заказов.", show_alert=True)
                 return
 
-    # 🔹 Формируем список заказов
     orders_text = "📦 *Ваши заказы:*\n\n"
     for order in orders_data:
         order_text = (
@@ -258,59 +265,46 @@ async def show_user_orders(call: types.CallbackQuery):
             f"{escape_md('--------------------------------')}\n"
         )
 
-        # Если сообщение превысит лимит, отправляем часть и создаём новое
         if len(orders_text) + len(order_text) > 4000:
             await call.message.answer(orders_text, parse_mode="MarkdownV2")
             orders_text = "📦 *Ваши заказы (продолжение...)*\n\n"
 
         orders_text += order_text
 
-    # Отправляем оставшуюся часть
     if orders_text:
         await call.message.answer(orders_text, parse_mode="MarkdownV2")
 
 
-
-
 async def get_user_name(message: types.Message):
     """Обрабатывает имя пользователя"""
-    from core.models import User  # Импортируем модель пользователя
-
     telegram_id = message.from_user.id
     username = message.from_user.username
     full_name = message.text.strip()
 
-    # Сохраняем имя и запрашиваем телефон
     user_data[telegram_id] = {"full_name": full_name, "username": username}
-
-    request_contact_keyboard = ReplyKeyboardMarkup(
-        keyboard=[[KeyboardButton(text="📲 Отправить контакт", request_contact=True)]],
-        resize_keyboard=True
-    )
 
     await message.answer("📞 Отправьте ваш номер телефона для завершения регистрации.",
                          reply_markup=request_contact_keyboard)
 
+
 @dp.message(F.contact)
 async def register_user(message: types.Message):
     """Регистрирует пользователя по переданному контакту"""
-    from core.models import User  # Импортируем модель пользователя
-
     telegram_id = message.from_user.id
     phone_number = message.contact.phone_number
 
-    # Получаем ранее введенное имя
     user_info = user_data.pop(telegram_id, {})
     full_name = user_info.get("full_name", "Пользователь")
     username = user_info.get("username", None)
 
-    # Создаем пользователя в БД
     user = await sync_to_async(User.objects.create)(
         telegram_id=telegram_id,
         username=username or f"user_{telegram_id}",
         first_name=full_name,
         phone_number=phone_number
     )
+    token = await sync_to_async(Token.objects.create)(user=user)
+    logging.info(f"✅ Токен создан для пользователя {user.username}: {token.key}")
 
     await message.answer("✅ Регистрация завершена! Вы можете пользоваться ботом.", reply_markup=customer_keyboard)
 
@@ -318,10 +312,8 @@ async def register_user(message: types.Message):
 # 🔹 Уведомление админа о новом заказе
 async def notify_admin(order_id):
     """Отправляет администратору уведомление о новом заказе"""
-
     try:
-        from core.models import Order
-        order = await asyncio.to_thread(Order.objects.get, id=order_id)
+        order = await sync_to_async(Order.objects.get)(id=order_id)
         message = (
             f"🛒 *Новый заказ!*\n"
             f"📌 *ID*: {order.id}\n"
@@ -331,71 +323,52 @@ async def notify_admin(order_id):
             f"📌 *Статус*: {order.get_status_display()}"
         )
         await bot.send_message(chat_id=TELEGRAM_ADMIN_ID, text=message, parse_mode="HTML")
-    except Order.DoesNotExist:
-        print(f"Ошибка: заказ {order_id} не найден.")
+    except ObjectDoesNotExist as e:
+        logging.error(f"Ошибка: заказ {order_id} не найден. {e}")
 
-import re
-
-# 🔹 Функция экранирования специальных символов MarkdownV2
-def escape_md(text):
-    """Экранирует специальные символы MarkdownV2"""
-    return re.sub(r"([_*\[\]()~`>#\+\-=|{}.!])", r"\\\1", str(text))
 
 # 🔹 Кнопка "📊 Аналитика"
 @dp.callback_query(F.data == "analytics")
 async def send_analytics(call: types.CallbackQuery):
     """Отправляет администраторам детальную аналитику"""
-    from reports.analytics import generate_sales_report  # ⬅️ Переносим импорт внутрь функции
-    from core.models import Report
-    from datetime import datetime, timedelta
-    import asyncio
-
     today = datetime.now().date()
     yesterday = today - timedelta(days=30)
 
-    # Проверяем, есть ли отчёт за вчера
-    report = await asyncio.to_thread(lambda: Report.objects.order_by("-date").first())
-
+    report = await sync_to_async(Report.objects.order_by("-date").first)()
     if not report or report.date < yesterday:
-        print("🔄 Генерация нового отчёта...")
-        report = await asyncio.to_thread(lambda: generate_sales_report(yesterday, today))
+        logging.info("🔄 Генерация нового отчёта...")
+        report = await sync_to_async(generate_sales_report)(yesterday, today)
 
     if not report:
         await call.answer("📊 Данных пока нет. Попробуйте позже.", show_alert=True)
         return
 
-    # ✅ Приводим данные к числам, чтобы избежать форматных ошибок
     pending_orders = int(report.pending_orders)
     pending_revenue = float(report.pending_revenue)
-
     processing_orders = int(report.processing_orders)
     processing_revenue = float(report.processing_revenue)
-
     delivering_orders = int(report.delivering_orders)
     delivering_revenue = float(report.delivering_revenue)
-
     completed_orders = int(report.completed_orders)
     completed_revenue = float(report.completed_revenue)
-
     canceled_orders = int(report.canceled_orders)
     canceled_revenue = float(report.canceled_revenue)
 
     total_orders = pending_orders + processing_orders + delivering_orders + completed_orders
     total_revenue = pending_revenue + processing_revenue + delivering_revenue + completed_revenue
 
-    # ✅ Формируем текст сообщения
     message = (
         f"📊 *Аналитика за 30 дней на {escape_md(report.date)}*\n"
         f"```\n"
-        f"{escape_md('Статус'):<15} {escape_md('Выручка'):>10} {escape_md('Заказы'):>8}\n"
+        f"{'Статус':<15} {'Выручка':>10} {'Заказы':>8}\n"
         f"{'-' * 34}\n"
-        f"{escape_md('В обработке'):<15} {pending_revenue:>10.2f} {pending_orders:>8}\n"
-        f"{escape_md('В работе'):<15} {processing_revenue:>10.2f} {processing_orders:>8}\n"
-        f"{escape_md('В доставке'):<15} {delivering_revenue:>10.2f} {delivering_orders:>8}\n"
-        f"{escape_md('Выполнено'):<15} {completed_revenue:>10.2f} {completed_orders:>8}\n"
+        f"{'В обработке':<15} {pending_revenue:>10.2f} {pending_orders:>8}\n"
+        f"{'В работе':<15} {processing_revenue:>10.2f} {processing_orders:>8}\n"
+        f"{'В доставке':<15} {delivering_revenue:>10.2f} {delivering_orders:>8}\n"
+        f"{'Выполнено':<15} {completed_revenue:>10.2f} {completed_orders:>8}\n"
         f"{'-' * 34}\n"
-        f"{escape_md('ИТОГО'):<15} {total_revenue:>10.2f} {total_orders:>8}\n"
-        f"{escape_md('Отменено'):<15} {canceled_revenue:>10.2f} {canceled_orders:>8}\n"
+        f"{'ИТОГО':<15} {total_revenue:>10.2f} {total_orders:>8}\n"
+        f"{'Отменено':<15} {canceled_revenue:>10.2f} {canceled_orders:>8}\n"
         f"```"
     )
 
@@ -411,11 +384,9 @@ async def link_telegram(message: types.Message):
         return
 
     user_id = int(args[1])
-    from core.models import User  # Импортируем здесь, чтобы избежать проблем с зависимостями
-
     user = await sync_to_async(User.objects.filter(id=user_id).first)()
     if user:
-        user.telegram_id = message.from_user.id  # Привязка Telegram ID
+        user.telegram_id = message.from_user.id
         await sync_to_async(user.save)()
         await message.reply("✅ Telegram успешно привязан к вашему аккаунту!")
     else:
@@ -427,14 +398,22 @@ async def link_telegram(message: types.Message):
 async def get_orders(message: types.Message):
     """Получить список заказов"""
     telegram_id = message.from_user.id
-    headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}  # <-- Используем Token
+    user = await sync_to_async(User.objects.filter(telegram_id=telegram_id).first)()
+    if not user:
+        await message.answer("🚫 Ошибка: пользователь не найден.")
+        return
 
+    token = await sync_to_async(Token.objects.filter(user=user).first)()
+    if not token:
+        await message.answer("🚫 Ошибка: токен пользователя не найден.")
+        return
+
+    headers = {"Authorization": f"Token {token.key}"}
     async with aiohttp.ClientSession() as session:
-        print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
-
+        logging.debug(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
         async with session.get(f"{API_URL}/orders/?telegram_id={telegram_id}", headers=headers) as response:
             response_text = await response.text()
-            print(f"📡 API ответил: {response_text}")  # <-- Отладка: смотрим, что вернул сервер
+            logging.debug(f"📡 API ответил: {response_text}")
 
             if response.status == 200:
                 orders = await response.json()
@@ -446,14 +425,11 @@ async def get_orders(message: types.Message):
                 for order in orders:
                     text += f"🆔 {order['id']} | Статус: {order['status']}\n"
 
-                # Разбиваем текст на части по 4096 символов
                 for chunk in [text[i:i + 4000] for i in range(0, len(text), 4000)]:
                     await message.answer(chunk, parse_mode="HTML")
-
             else:
                 await message.answer(f"❌ Ошибка получения заказов. Код: {response.status}")
-                print(response_text)  # Логируем ответ API, но не отправляем в Telegram
-
+                logging.error(response_text)
 
 
 # 🔹 Обработчик команды /order <id>
@@ -463,23 +439,28 @@ async def order_detail(message: types.Message):
     try:
         order_id = int(message.text.split()[1])
         telegram_id = message.from_user.id
-        headers = {"Authorization": f"Token {settings.TELEGRAM_API_TOKEN}"}
-        print(f"🔍 Отправляемый заголовок: {headers}")  # ✅ Отладочный вывод
-        async with aiohttp.ClientSession() as session:
-            print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
 
+        user = await sync_to_async(User.objects.filter(telegram_id=telegram_id).first)()
+        if not user:
+            await message.answer("🚫 Ошибка: пользователь не найден.")
+            return
+
+        token = await sync_to_async(Token.objects.filter(user=user).first)()
+        if not token:
+            await message.answer("🚫 Ошибка: токен пользователя не найден.")
+            return
+
+        headers = {"Authorization": f"Token {token.key}"}
+        logging.debug(f"🔍 Отправляемый заголовок: {headers}")
+        async with aiohttp.ClientSession() as session:
+            logging.debug(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
             async with session.get(f"{API_URL}/orders/{order_id}/?telegram_id={telegram_id}", headers=headers) as response:
                 if response.status == 200:
                     order = await response.json()
-                    print(f"🔍 Данные заказа: {order}")  # ✅ Проверка, какие данные приходят
+                    logging.debug(f"🔍 Данные заказа: {order}")
 
-                    # ✅ Получаем адрес доставки, если его нет, ставим "Не указан"
                     delivery_address = order.get("delivery_address", "Не указан")
-
-                    # ✅ Получаем дату заказа, если поле называется иначе (например, order_date)
                     created_at = order.get("order_date", order.get("created_at", "Дата не указана"))
-
-                    # ✅ Формируем список товаров
                     products_list = ", ".join([product["name"] for product in order.get("products", [])])
 
                     text = (
@@ -494,7 +475,6 @@ async def order_detail(message: types.Message):
 
                 elif response.status == 404:
                     await message.answer("❌ Заказ не найден. Проверьте ID.")
-
                 else:
                     response_text = await response.text()
                     await message.answer(
@@ -505,15 +485,13 @@ async def order_detail(message: types.Message):
         await message.answer("⚠️ Введите корректный ID заказа. Пример: `/order 7`")
 
 
-
 # 🔹 Обработчик оформления заказа
 @dp.message(Command("new_order"))
 async def new_order(message: types.Message, state: FSMContext):
     """Оформление нового заказа с выбором адреса"""
     user_id = message.from_user.id
     async with aiohttp.ClientSession() as session:
-        print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
-
+        logging.debug(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
         async with session.get(f"{API_URL}/user/{user_id}/address") as response:
             if response.status == 200:
                 user_data = await response.json()
@@ -530,7 +508,7 @@ async def new_order(message: types.Message, state: FSMContext):
                     await state.set_state("waiting_for_address")
 
 
-@dp.message(F.state == "waiting_for_address")
+@dp.message(F.state=="waiting_for_address")
 async def get_delivery_address(message: types.Message, state: FSMContext):
     """Сохранение нового адреса"""
     user_id = message.from_user.id
@@ -548,8 +526,7 @@ async def use_saved_address(callback: CallbackQuery):
     """Использование сохраненного адреса"""
     user_id = callback.from_user.id
     async with aiohttp.ClientSession() as session:
-        print(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
-
+        logging.debug(f"🔍 Токен, переданный в API: {settings.TELEGRAM_API_TOKEN}")
         async with session.get(f"{API_URL}/user/{user_id}/address") as response:
             if response.status == 200:
                 user_data = await response.json()
@@ -564,7 +541,11 @@ async def use_saved_address(callback: CallbackQuery):
 # 🔹 Запуск бота
 async def main():
     """Запуск бота"""
-    await dp.start_polling(bot)
+    try:
+        await dp.start_polling(bot)
+    except Exception as e:
+        logging.error(f"Ошибка при запуске бота: {e}")
+
 
 if __name__ == "__main__":
     asyncio.run(main())

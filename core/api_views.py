@@ -116,6 +116,13 @@ logger = logging.getLogger(__name__)
 @permission_classes([IsAuthenticated])
 def get_orders(request):
     user = request.user
+    telegram_id = request.query_params.get('telegram_id')
+
+    if telegram_id:
+        user = User.objects.filter(telegram_id=telegram_id).first()
+        if not user:
+            return Response({'error': 'Пользователь не найден'}, status=status.HTTP_404_NOT_FOUND)
+
     # Админ видит все заказы, пользователь только свои
     orders = Order.objects.all() if user.is_staff else Order.objects.filter(user=user)
 
