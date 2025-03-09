@@ -1,7 +1,7 @@
 # Этот файл анализирует данные из базы и генерирует отчёты
 
 import csv
-import datetime
+from datetime import datetime, timedelta
 from core.models import Order, Report
 from django.utils.timezone import now
 
@@ -11,36 +11,44 @@ def export_sales_report_csv():
     Экспортирует отчёт о продажах в CSV-файл.
     """
     today = now().date()
+    start_date = today - timedelta(days=30)  # Заказы за последние 30 дней
     filename = f"sales_report_{today}.csv"
 
     with open(filename, "w", newline="", encoding="utf-8") as file:
         writer = csv.writer(file)
         writer.writerow(["Дата", "ID заказа", "Клиент", "Сумма", "Статус"])
 
-        for order in Order.objects.filter(order_date__date=today):
+        # Фильтруем заказы за последние 30 дней
+        orders = Order.objects.filter(order_date__date__gte=start_date, order_date__date__lte=today)
+
+        for order in orders:
             writer.writerow([
                 order.order_date.strftime("%Y-%m-%d"),
                 order.id,
                 order.user.username if order.user else "Неизвестный клиент",
-                order.price,  # ✅ Исправлено с `total_price()` на `price`
+                order.price,
                 order.get_status_display()
             ])
 
     return filename
 
 
-from datetime import datetime, timedelta
-
-def generate_sales_report(start_date: datetime, end_date: datetime):
+def generate_sales_report(start_date: datetime, end_date: datetime, report_date=None):
     """
     Генерирует и сохраняет отчёт о продажах с разбивкой по статусам за указанный период времени.
 
     :param start_date: Начало периода (datetime)
     :param end_date: Конец периода (datetime)
+    :param report_date: Дата отчёта (если не указана, используется end_date)
     """
 
     # Фильтруем заказы за указанный период
     orders = Order.objects.filter(order_date__date__gte=start_date, order_date__date__lte=end_date)
+    print(f"Заказы за период с {start_date} по {end_date}: {orders.count()} шт.")
+
+    if not orders.exists():
+        print("⚠️ Нет заказов для формирования отчета.")
+        return None  # Если заказов нет, возвращаем None
 
     # Группируем заказы по статусам
     status_counts = {status[0]: {"count": 0, "revenue": 0} for status in Order.STATUS_CHOICES}
@@ -51,6 +59,7 @@ def generate_sales_report(start_date: datetime, end_date: datetime):
 
     # Создаём отчет и сохраняем в базу данных
     report = Report.objects.create(
+        date=report_date if report_date else end_date,  # Используем report_date, если он передан
         total_orders=orders.count(),
         total_revenue=sum(order.price for order in orders),
 

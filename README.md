@@ -78,3 +78,8 @@
 файл для этого специально создан:<br>
 
     core/management/commands/generate_report.py
+
+Отчет для Админа:<br>
+кроме стандартного Django, доступен еще и кастомный по адресу:
+
+    http://127.0.0.1:8000/reports/sales/

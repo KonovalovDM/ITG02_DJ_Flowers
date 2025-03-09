@@ -8,6 +8,7 @@ import asyncio
 import aiohttp
 import re
 from datetime import datetime, timedelta
+from django.utils import timezone
 from typing import cast
 
 from aiogram import Bot, Dispatcher, types, F
@@ -322,18 +323,38 @@ async def notify_admin(order_id):
 @dp.callback_query(F.data == "analytics")
 async def send_analytics(call: types.CallbackQuery):
     """Отправляет администраторам детальную аналитику"""
-    today = datetime.now().date()
+    # Если нужно сделать отчет за "старую" дату, то смещаем текущую дату например на 20 дней в прошлое "timedelta(days=20)"
+    today = datetime.now().date() - timedelta(days=1)
     yesterday = today - timedelta(days=30)
 
-    report = await sync_to_async(Report.objects.order_by("-date").first)()
-    if not report or report.date < yesterday:
-        logging.info("🔄 Генерация нового отчёта...")
-        report = await sync_to_async(generate_sales_report)(yesterday, today)
+    # Очистка старых отчётов (старше 180 дней)
+    await sync_to_async(Report.objects.filter(date__lt=timezone.now() - timedelta(days=180)).delete)()
+    logging.info("🧹 Удалены отчёты старше 180 дней.")
 
+    # Проверяем, есть ли отчёт за today (смещённую дату)
+    report = await sync_to_async(Report.objects.filter(date=today).first)()
+
+    # Если отчёта за today нет, генерируем новый
+    if not report:
+        logging.info("🔄 Генерация нового отчёта...")
+        print("Сегодня (смещённая дата):", today)
+        print("Вчера (смещённая дата):", yesterday)
+        report = await sync_to_async(generate_sales_report)(yesterday, today, report_date=today)
+
+        # Проверяем, что отчет был создан
+        if not report:
+            await call.answer("❌ Не удалось сформировать отчет. Попробуйте позже.", show_alert=True)
+            return
+
+    # Проверяем, что report не None
     if not report:
         await call.answer("📊 Данных пока нет. Попробуйте позже.", show_alert=True)
         return
 
+    # Теперь report точно не None, можно использовать report.date
+    print("Дата отчета:", report.date)
+
+    # Приводим данные к числам, чтобы избежать форматных ошибок
     pending_orders = int(report.pending_orders)
     pending_revenue = float(report.pending_revenue)
     processing_orders = int(report.processing_orders)
@@ -345,11 +366,15 @@ async def send_analytics(call: types.CallbackQuery):
     canceled_orders = int(report.canceled_orders)
     canceled_revenue = float(report.canceled_revenue)
 
+    # Рассчитываем итоговые значения
     total_orders = pending_orders + processing_orders + delivering_orders + completed_orders
+    total_orders_2 = pending_orders + processing_orders + delivering_orders + completed_orders + canceled_orders
     total_revenue = pending_revenue + processing_revenue + delivering_revenue + completed_revenue
 
+    # Формируем текст сообщения
     message = (
         f"📊 *Аналитика за 30 дней на {escape_md(report.date)}*\n"
+        f"*Заказы за период с {escape_md(yesterday)} по {escape_md(today)}: {escape_md(total_orders_2)}шт*\n"
         f"```\n"
         f"{'Статус':<15} {'Выручка':>10} {'Заказы':>8}\n"
         f"{'-' * 34}\n"

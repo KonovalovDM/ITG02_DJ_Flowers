@@ -33,4 +33,5 @@ urlpatterns = [
     path("register/", views.register, name="register"),  # Новый маршрут для регистрации
     path("catalog/", include("core.urls")),  # Подключаем маршруты из core
     path("api/", include("core.api_urls")),  # Подключаем API
+    path("reports/", include("reports.urls")),  # Подключаем маршруты из reports
 ] + static(settings.MEDIA_URL, document_root=settings.MEDIA_ROOT)
